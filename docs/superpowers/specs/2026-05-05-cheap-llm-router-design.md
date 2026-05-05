@@ -29,10 +29,18 @@ delegate **read-for-context** operations (multiple files, summary only)
 to a cheap OpenAI-compatible model (Kimi, DeepSeek, Gemini Flash, etc.)
 via OpenRouter or any compatible provider.
 
-Acceptance: when Claude Code uses `cheap read` instead of native `Read`
-on a 5-file context-summary task, session token usage on that step
-drops by ≥10×, and the summary is factually accurate enough that Claude
-does not need to re-read the originals.
+Acceptance criteria (objectively verifiable in CI):
+
+1. **Token reduction.** When run against the fixture set
+   `tests/fixtures/sample_module/` (≥ 8 000 tokens of source,
+   measured with `tiktoken` `cl100k_base` — used as a portable proxy
+   since Anthropic's exact tokenizer is not published), `cheap read`
+   produces a summary whose `output_tokens` (telemetry line on
+   stderr, see §4.5) is ≤ 800.
+2. **Fidelity (no fabrication).** Summary text mentions **every**
+   public function name from the fixture (extracted via `ast.parse`)
+   and contains **no** function name absent from the fixture.
+   Implemented as `tests/test_read_integration.py`.
 
 ### Non-goals (Phase 1)
 
@@ -52,8 +60,8 @@ The user's strongest pain matches **session ceiling**, which `cheap
 read` addresses directly. The **weekly ceiling** fix (proxy) is
 materially harder (transparent SSE forwarding, OAuth-token sourcing
 from Keychain, ToS gray area) and may become unnecessary if Phase 1
-already restores comfortable headroom. We measure first, expand if
-needed.
+already restores comfortable headroom. We measure first (§4.5
+telemetry), expand if needed.
 
 Phase boundaries:
 
@@ -71,7 +79,7 @@ Phase boundaries:
 ┌─────────────────────────────────────────────┐
 │ Claude Code (subscription, native)          │
 │                                             │
-│   [Bash tool] ──► cheap read f1 f2 ... "Q"  │
+│   [Bash tool] ──► cheap read f1 f2 ... -q Q │
 │                          │                  │
 └──────────────────────────┼──────────────────┘
                            │
@@ -82,6 +90,7 @@ Phase boundaries:
         │  2. build summary prompt          │
         │  3. call provider via openai SDK  │
         │  4. print summary to stdout       │
+        │  5. emit telemetry to stderr      │
         └──────────────┬───────────────────┘
                        │
                        ▼
@@ -105,14 +114,21 @@ Phase boundaries:
 │   ├── client.py                 # Thin wrapper over openai SDK with base_url override
 │   └── commands/
 │       ├── __init__.py
-│       └── read.py               # `cheap read` implementation
+│       ├── read.py               # `cheap read` implementation
+│       └── install_claude_rule.py  # `cheap install-claude-rule` (idempotent)
 ├── tests/
 │   ├── conftest.py
+│   ├── fixtures/
+│   │   └── sample_module/        # known files for fidelity test
+│   │       ├── auth.py
+│   │       ├── db.py
+│   │       └── handlers.py
 │   ├── test_config.py
+│   ├── test_install_rule.py      # idempotency check
 │   ├── test_read_unit.py         # mocked OpenAI client
 │   └── test_read_integration.py  # real OpenRouter call, gated by env var
 └── docs/
-    ├── claude-md-snippet.md      # snippet to paste into ~/.claude/CLAUDE.md
+    ├── claude-md-snippet.md      # snippet installed by `cheap install-claude-rule`
     └── superpowers/specs/
         └── 2026-05-05-cheap-llm-router-design.md   # this file
 ```
@@ -138,67 +154,100 @@ read:
     invariants, gotchas. Skip boilerplate. Aim for ~{max_summary_tokens}
     tokens. Use markdown headings per file.
 
-    User question (focus the summary on this if present):
-    {question}
+    For every public symbol you mention, cite as `path/to/file.py:LINE`
+    so the reader can verify it. Do NOT invent symbols not present in
+    the files; omit anything you are unsure about.
+
+    Focus: {question_or_overview}
 
     Files:
     {files_block}
 ```
 
-The CLI auto-creates this file on first run with the template above and
-prints the path so the user can edit.
+On first invocation of **any** subcommand (including `cheap read`),
+if the config file is missing, the CLI writes the template above to
+that path, prints `created default config at <path>` to stderr, and
+proceeds — `cheap read` never fails just because config does not yet
+exist. When `-q` is omitted, `{question_or_overview}` is substituted
+with the literal string
+`(general structural overview — no specific question)`.
 
 ### 4.4 CLI surface
 
 ```bash
 cheap --help
-cheap read FILE [FILE...] [QUESTION]
+cheap read [-q QUESTION] FILE [FILE...]
 cheap config path             # print resolved config path
 cheap config show             # print resolved (env-substituted) config
+cheap install-claude-rule     # idempotently install ~/.claude/CLAUDE.md section
 ```
 
 `cheap read` semantics:
 
-- All positional args ending in a path that exists are treated as files.
-- The remaining trailing arg, if any, is the question.
+- All positional args are file paths; non-existent paths fail-fast
+  with a clear error (no silent fallback to "this is the question").
+- Optional `-q` / `--question` flag focuses the summary; without it,
+  the model produces a general structural overview.
 - Files are read as UTF-8; binary files cause a clear error, not a crash.
 - Files are concatenated with a `--- FILE: <path> ---` header per file.
 - If concatenation exceeds `max_input_chars`, CLI exits with a clear
   error suggesting the user pass fewer files or raise the cap.
-- Output: markdown summary on stdout. Errors and metadata on stderr.
+- Output: markdown summary on stdout; telemetry + errors on stderr.
 
-### 4.5 CLAUDE.md snippet
+`cheap install-claude-rule` semantics:
 
-Added to `~/.claude/CLAUDE.md` (v8.0) as a new top-level section, kept
-short to fit the file's compact style. The exact text lives in
-`docs/claude-md-snippet.md`; substantive content:
+- Reads `docs/claude-md-snippet.md` shipped with the package.
+- Looks in `~/.claude/CLAUDE.md` for heading `## Cheap LLM delegation`.
+- If absent → appends snippet (with one blank line separator).
+- If present → leaves the file untouched and prints `already installed`.
+  No silent overwrite.
+- `--force` flag overwrites the existing block (between heading and
+  next `##` heading) with the shipped snippet.
 
-- Heading: `## Cheap LLM delegation (cheap CLI)`.
-- Trigger: when Claude would `Read` 3+ files only to gain context
-  (not to edit), prefer `cheap read <file1> <file2> ... ["question"]`.
-- Effect: returns a ~600-token markdown summary instead of pulling
-  raw files into the session context window.
-- "Do NOT delegate" list: about-to-edit, non-trivial debugging,
-  security-sensitive code, architectural decisions, cross-file
-  refactor that depends on exact identifiers.
-- Default rule: when unsure → don't delegate. Cost of a wrong summary
-  outweighs tokens saved.
+### 4.5 Telemetry (stderr only)
+
+Each `cheap read` invocation writes one line to stderr **after** the
+provider call (so it does not contaminate stdout, which Claude
+captures as the summary):
+
+`[cheap] input_chars=<N> output_tokens=<N> model=<id> elapsed_ms=<N>`
+
+Rationale: this is the sole instrument that makes the "measure first"
+approach in §3 actionable. No file logs, no remote telemetry, no
+opt-out. The line surfaces in Claude Code's bash tool output, where
+the user already looks.
+
+### 4.6 CLAUDE.md snippet
+
+Installed (idempotently) by `cheap install-claude-rule`. Verbatim text
+lives in `docs/claude-md-snippet.md`. Compact form, matching
+`~/.claude/CLAUDE.md` v8.0 style:
+
+> ## Cheap LLM delegation
+>
+> When reading 3+ files only for context (not to edit), prefer
+> `cheap read F1 F2 ... -q "question"` (returns ~600-token summary).
+> Skip when: editing those files, non-trivial debugging,
+> security-sensitive code (auth/crypto/secrets/input validation),
+> architectural decisions, cross-file refactor.
+> When unsure → don't delegate.
 
 ## 5. Quality safeguards
 
 The single biggest risk is the cheap model **fabricating** in the
 summary. Mitigations:
 
-1. **Prompt discipline.** Template explicitly says "factual summary",
-   names the buckets (API, data flow, invariants, gotchas), and tells
-   the model to skip boilerplate. Low temperature (0.2).
+1. **Prompt discipline.** Template names the buckets (API, data flow,
+   invariants, gotchas), forbids inventing symbols, and requires
+   `path:LINE` citations for every named symbol so Claude can verify
+   against source. Low temperature (0.2).
 2. **Per-file structure.** Output is per-file markdown headings, so
    Claude can spot which file a fact came from. Easier to verify.
-3. **Verification test.** `tests/test_read_integration.py` feeds known
-   sample files (in `tests/fixtures/`) and asserts that the summary
-   contains specific public symbols and omits specific noise. Runs
-   only when `RUN_INTEGRATION=1` and `OPENROUTER_API_KEY` set, so it
-   does not block normal CI.
+3. **Verification test.** `tests/test_read_integration.py` feeds the
+   `tests/fixtures/sample_module/` files and asserts the summary
+   contains every public function name (ground truth via `ast.parse`)
+   and no fabricated names. Runs only when `RUN_INTEGRATION=1` and
+   `OPENROUTER_API_KEY` set, so it does not block normal CI.
 4. **Failure mode = visible.** If provider returns an error or empty
    response, CLI exits non-zero with the raw error. Claude's bash tool
    surfaces this; Claude falls back to native `Read`.
@@ -207,12 +256,12 @@ summary. Mitigations:
 
 | Layer | Tool | Scope |
 |-------|------|-------|
-| Unit | pytest, `respx` or `openai` mock | CLI argparsing, file reading, prompt assembly, error paths |
+| Unit | pytest, `respx` or `openai` mock | CLI argparsing, file reading, prompt assembly, error paths, install-claude-rule idempotency |
 | Contract | pytest with recorded `openai` response | Confirms request body matches expected shape |
-| Integration | pytest, real OpenRouter, gated env | One sample call end-to-end, asserts summary contains known symbol |
+| Integration | pytest, real OpenRouter, gated env | `cheap read` against `sample_module` fixture, asserts both acceptance criteria from §2 |
 
-CI: GitHub Actions (added in implementation phase if user keeps repo
-private/public, otherwise local `pytest` only).
+CI: GitHub Actions (added in implementation phase if repo is published;
+otherwise local `pytest` only).
 
 ## 7. Installation & usage
 
@@ -225,17 +274,16 @@ export OPENROUTER_API_KEY=sk-or-...           # add to shell profile
 cheap config path                              # creates default config, prints location
 $EDITOR ~/.config/cheap-llm/config.yaml        # adjust model if needed
 
-# Add CLAUDE.md snippet:
-cat /Users/admin/_Projects/cheap-llm-router/docs/claude-md-snippet.md \
-  >> ~/.claude/CLAUDE.md
+# Add CLAUDE.md rule (idempotent — safe to re-run):
+cheap install-claude-rule
 
-# Use in Claude Code: rule above tells Claude when to call `cheap read`.
+# Use in Claude Code: the rule tells Claude when to call `cheap read`.
 ```
 
 ## 8. Open questions
 
-None blocking. Phase 1 ships with these defaults; revise after one
-week of real use:
+None block implementation. Calibration points to revisit after ≥1 week
+of real use:
 
 - **Model choice default.** Kimi K2 chosen for code-summary quality at
   ~1/100 Anthropic cost. If DeepSeek V3 proves better in practice,
@@ -250,5 +298,6 @@ week of real use:
 - Caching of summaries. Each call is fresh; if Claude needs the same
   summary twice, that's Claude's problem (and a sign the workflow
   needs a tweak, not a cache).
-- Token-cost telemetry. Nice-to-have for Phase 2; not Phase 1.
+- Cost telemetry beyond per-call stderr line. Roll-ups (daily, weekly
+  totals) are nice-to-have for Phase 2.
 - Windows support. macOS + Linux only (matches user environment).
