@@ -65,11 +65,34 @@ Why: Claude Code's own auto-compact runs through your expensive model
 ~$0.001. On a heavy day, that is the difference between hitting
 your weekly cap on Wednesday vs not at all.
 
-Self-check size when in doubt:
+IMPORTANT — `cheap extract` by itself does NOT shrink your current
+context window. It prepares a digest for handoff. The actual
+compaction happens only when ONE of these happens:
+- (a) the user starts a fresh session and pastes the digest as the
+  first message, OR
+- (b) the user runs Claude Code's built-in `/compact` (which DOES
+  shrink the window in-place — but pays your expensive model,
+  defeating the savings purpose).
+Step 4 ("recommend fresh session") is therefore load-bearing. If
+the user declines, your context stays bloated until they decide.
+Do not silently re-extract on every turn pretending it compacts.
+
+Self-check #1 — disk size of the active jsonl:
 ```
 wc -c ~/.claude/projects/$(pwd | sed 's:[/_]:-:g')/*.jsonl 2>/dev/null | sort -n | tail -1
 ```
-If > 2 MB (~500k chars / ~125k tokens) — definitely compact.
+> 2 MB (~500k chars / ~125k tokens) — definitely compact.
+
+Self-check #2 — ask the user what colour the context bar in their
+Claude Code statusline shows. Claude Code knows the true
+`context_window.used_percentage` and surfaces it there:
+- **green** (<50%) — no compaction needed yet
+- **yellow** (50-80%) — start preparing handoff digest now
+- **red** (>80%) — compact ASAP
+
+You (the agent) cannot read this percentage directly from your
+preamble; the statusline can. Asking the user is the cheapest way
+to get a true number when behaviour signals are ambiguous.
 
 ### Honest priors (so you don't argue with yourself)
 - For read-for-context, summary fidelity ≈ raw-bytes reading.
