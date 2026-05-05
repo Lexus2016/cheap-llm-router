@@ -8,7 +8,9 @@ from typing import Optional
 import typer
 
 from . import config as config_mod
+from . import transcript as tr
 from .commands import read as read_cmd
+from .commands import extract as extract_cmd
 from .commands import install_claude_rule as install_cmd
 
 app = typer.Typer(no_args_is_help=True, add_completion=False,
@@ -75,6 +77,42 @@ def cmd_config_check() -> None:
                    "move it to the api_key field instead)")
     typer.echo(msg, err=True)
     raise typer.Exit(2)
+
+
+@app.command("extract")
+def cmd_extract(
+    jsonl: Optional[str] = typer.Option(
+        None, "--jsonl",
+        help="Explicit transcript file path (any supported format).",
+    ),
+    session_id: Optional[str] = typer.Option(
+        None, "--session-id",
+        help="Session/thread UUID; resolved across Claude and Codex.",
+    ),
+    question: Optional[str] = typer.Option(
+        None, "-q", "--question",
+        help="Focus the summary on this question; default is a general session summary.",
+    ),
+    mode: tr.Mode = typer.Option(
+        tr.Mode.FULL, "--mode",
+        help="Slice of the transcript: full | messages-only.",
+        case_sensitive=False,
+    ),
+    tail: Optional[int] = typer.Option(
+        None, "--tail",
+        help="Keep only the last N messages after mode-filtering. Must be ≥ 1.",
+        min=1,
+    ),
+) -> None:
+    """Summarise a Claude/Codex session transcript via the cheap provider."""
+    rc = extract_cmd.run(
+        jsonl=jsonl,
+        session_id=session_id,
+        question=question,
+        mode=mode,
+        tail=tail,
+    )
+    raise typer.Exit(rc)
 
 
 @app.command("install-claude-rule")
