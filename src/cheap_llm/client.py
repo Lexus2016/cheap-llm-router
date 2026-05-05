@@ -40,11 +40,17 @@ def call_provider(cfg: Config, prompt: str) -> Completion:
     )
 
     started = time.monotonic()
+    # Send BOTH max_tokens (legacy, all providers) and max_completion_tokens
+    # (newer; reasoning-capable models honour only this for the full output
+    # including hidden reasoning tokens). Providers that don't recognise
+    # max_completion_tokens silently ignore it; for non-reasoning models
+    # both params produce the same cap. See evaluation log in README.
     response = client.chat.completions.create(
         model=cfg.provider.model,
         messages=[{"role": "user", "content": prompt}],
         temperature=cfg.provider.temperature,
         max_tokens=cfg.read.max_summary_tokens,
+        extra_body={"max_completion_tokens": cfg.read.max_summary_tokens},
     )
     elapsed_ms = int((time.monotonic() - started) * 1000)
 
