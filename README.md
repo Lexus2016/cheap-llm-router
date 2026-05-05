@@ -98,6 +98,18 @@ cheap install-claude-rule
 
 That's it. From now on, when Claude or Codex is about to read a bunch of files just to gain context, it will use `cheap` automatically.
 
+### Upgrading the rule later
+
+Re-running `cheap install-claude-rule` after a new release stays silent if the local rule is current. When a newer rule version ships, you get an upgrade hint:
+
+```
+already installed at /Users/you/.claude/CLAUDE.md (rule v1; v2 available
+  — run with --force to upgrade, this REPLACES the block including any
+  local edits)
+```
+
+`--force` overwrites the entire `## Cheap LLM …` block, so any local edits in it (e.g. your own "Past mistakes" entries) are lost — copy them out first if you want to keep them.
+
 ## For AI agents (auto-install)
 
 If you are an AI agent (Claude Code, Codex CLI, Gemini, Cursor, etc.) reading this README to set up `cheap` for your principal, run these steps in order. Stop and ask the user if a step needs information you don't have.
