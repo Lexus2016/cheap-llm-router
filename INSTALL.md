@@ -1,144 +1,138 @@
 # Install — cheap-llm-router
 
-Step-by-step setup. Each step is independent — if anything goes wrong,
-`UNINSTALL.md` lists how to roll back exactly that step.
+🌐 **Languages:** **English** · [Українська](INSTALL.uk.md) · [Русский](INSTALL.ru.md)
 
-## 0. Prerequisites
+This walks you through setup. Each step stands on its own — if anything goes wrong, [UNINSTALL.md](UNINSTALL.md) tells you how to undo exactly that step.
 
-- macOS or Linux.
-- Python **3.11+** (`python3 --version`).
-- `pipx` (`brew install pipx` on macOS, `python3 -m pip install --user pipx` elsewhere).
-- An **OpenRouter** API key (or any other OpenAI-compatible endpoint
-  + key — DeepSeek, Moonshot direct, local Ollama, etc.). Get one at
-  <https://openrouter.ai/>.
+## Before you start
 
-## 1. Install the CLI
+You'll need:
+
+- **macOS or Linux.** Windows isn't tested.
+- **Python 3.11 or newer.** Check with `python3 --version`.
+- **`pipx`.** Installs CLI tools in their own clean environment so they don't fight your system Python.
+  - macOS: `brew install pipx`
+  - Linux: `python3 -m pip install --user pipx && pipx ensurepath`
+- **An OpenRouter account and API key.** Free signup at <https://openrouter.ai/>, then top up a few dollars and copy the key. It looks like `sk-or-v1-…`. (You can also use any other OpenAI-compatible provider — DeepSeek directly, a local Ollama, etc.)
+
+## Step 1 — Install the `cheap` command
 
 ```bash
-pipx install /Users/admin/_Projects/cheap-llm-router
+pipx install git+https://github.com/Lexus2016/cheap-llm-router.git
 ```
 
-This puts a `cheap` binary on your `PATH` (under `~/.local/bin/cheap`).
-
-Verify:
+After this, the `cheap` command is on your PATH:
 
 ```bash
 cheap --help
-which cheap     # → ~/.local/bin/cheap
+which cheap          # → ~/.local/bin/cheap (or similar)
 ```
 
-To upgrade after editing the source:
+If `cheap` isn't found, your shell might not have `~/.local/bin` on PATH. Run `pipx ensurepath` and open a new terminal.
+
+## Step 2 — Tell `cheap` where to find your API key
+
+The simplest way — paste this line into your shell startup file (`~/.zshrc` for zsh, `~/.bashrc` for bash, `~/.config/fish/config.fish` for fish):
 
 ```bash
-pipx reinstall cheap-llm-router
+export OPENROUTER_API_KEY=sk-or-v1-...
 ```
 
-For development (editable install, picks up source changes immediately):
+Then reload it:
 
 ```bash
-pipx install --editable /Users/admin/_Projects/cheap-llm-router
+source ~/.zshrc        # or open a new terminal
+cheap config check     # → OK
 ```
 
-## 2. Provide the provider API key
+If you see `missing env: OPENROUTER_API_KEY` instead, the export isn't visible — open a fresh terminal or check that you saved the right rc file.
 
-Add to your shell profile (`~/.zshrc`, `~/.bashrc`, `~/.config/fish/config.fish` …):
-
-```bash
-export OPENROUTER_API_KEY="sk-or-v1-..."
-```
-
-Reload your shell or `source ~/.zshrc`.
-
-Verify the CLI sees it:
+**Alternative if env vars are awkward** — put the key directly in the config file:
 
 ```bash
-cheap config check
-# → OK
-# (exit code 0)
-```
-
-If it prints `missing env: OPENROUTER_API_KEY`, the env var is not in
-the new shell — re-source your profile or open a fresh terminal.
-
-## 3. (Optional) Adjust the default config
-
-The first time any `cheap …` subcommand runs, it auto-creates
-`~/.config/cheap-llm/config.yaml` from the embedded default. To
-inspect or edit:
-
-```bash
-cheap config path     # prints the path
-cheap config show     # prints the file (env vars NOT substituted; safe to paste)
 $EDITOR "$(cheap config path)"
 ```
 
-You may want to change:
+Find the `api_key_env: OPENROUTER_API_KEY` line, comment it out (`# api_key_env: ...`), and add right below:
 
-- `provider.model` — switch to `deepseek/deepseek-chat-v3`,
-  `google/gemini-2.5-flash`, etc.
-- `read.max_summary_tokens` — raise/lower the target summary size.
-- `secrets_guard.patterns` — add patterns specific to your repos.
+```yaml
+api_key: "sk-or-v1-..."
+```
 
-## 4. Install the CLAUDE.md rule
+This works the same way, but the secret now lives in a YAML file. Keep it out of git, iCloud, Dropbox, and screenshots. `cheap config show` will mask it automatically; `cat` will not.
 
-Tells Claude Code when to delegate to `cheap read`. Idempotent — safe
-to re-run.
+## Step 3 — Tell Claude / Codex about the new tool
+
+This adds a section to `~/.claude/CLAUDE.md` (and to `AGENTS.md` for Codex if you have one) telling the AI when to use `cheap`. Safe to re-run — it won't duplicate.
 
 ```bash
 cheap install-claude-rule
 ```
 
-Result: a new `## Cheap LLM delegation` section is appended to
-`~/.claude/CLAUDE.md` (or the file is created if missing).
-
-Re-running prints `already installed at ...` and changes nothing. Use
-`--force` to overwrite the section with the canonical snippet:
+Re-running prints `already installed at …` and changes nothing. To overwrite the section with the latest rule text:
 
 ```bash
 cheap install-claude-rule --force
 ```
 
-## 5. Smoke test
+## Step 4 — Try it out
 
-Without burning the API:
+Run a real summary on a small file from the project:
 
 ```bash
-# Secrets guard refuses .env on purpose:
-cheap read tests/fixtures/.env.test \
-           tests/fixtures/sample_module/auth.py
-# → exit 2, "refused (matches secrets_guard.patterns)"
+cheap read tests/fixtures/sample_module/auth.py -q "what does this do?"
 ```
 
-A real summary call (≈ \$0.005 on Kimi K2):
+You'll get a markdown summary on stdout and a telemetry line on stderr that looks like:
 
-```bash
-cheap read tests/fixtures/sample_module/auth.py \
-           tests/fixtures/sample_module/db.py \
-           -q "explain shared state and the public API"
-# → markdown summary on stdout
-# → [cheap] files=2 input_chars=N output_tokens=N model=... elapsed_ms=N on stderr
+```
+[cheap] files=1 input_chars=4255 output_tokens=587 model=deepseek/deepseek-v4-pro elapsed_ms=2143
 ```
 
-## 6. (Optional) Run the full test suite
+That's it. From now on, when Claude or Codex would have read 3+ files just for context, the rule tells it to call `cheap` first.
+
+## (Optional) Step 5 — Run the test suite
+
+If you cloned the source tree and want to verify everything works:
 
 ```bash
-cd /Users/admin/_Projects/cheap-llm-router
+cd /path/to/cheap-llm-router
 python3 -m venv .venv
 .venv/bin/pip install -e ".[test]"
 .venv/bin/pytest -q
-# → 22 passed, 2 skipped (integration gated)
+# → 65 passed
+```
 
-# To run the integration test against a real OpenRouter call:
+To also run the live-network integration test (costs ~$0.01 against your OpenRouter balance):
+
+```bash
 RUN_INTEGRATION=1 .venv/bin/pytest -k integration
 ```
 
-## 7. Use it in Claude Code
+## Common issues
 
-In any Claude Code session, when Claude is about to read 3+ files only
-to gain context, the CLAUDE.md rule will tell it to call:
+| Problem | What to do |
+|---|---|
+| `command not found: cheap` | Run `pipx ensurepath`, open a new terminal. |
+| `missing env: OPENROUTER_API_KEY` | The export isn't in the current shell. `source ~/.zshrc` or open a new terminal. |
+| `provider call failed: ... 401` | Wrong or revoked API key. Check at <https://openrouter.ai/keys>. |
+| `provider call failed: ... 402` | Out of credits. Top up at <https://openrouter.ai/credits>. |
+| `cheap install-claude-rule` adds the rule again | You're on an older version. Upgrade with `pipx reinstall cheap-llm-router`. |
+
+## Updating later
+
+If you installed from GitHub:
 
 ```bash
-cheap read src/foo.py src/bar.py src/baz.py -q "explain the auth flow"
+pipx reinstall cheap-llm-router
 ```
 
-That's it. Watch the per-call telemetry on stderr to see real savings.
+If you installed from a local clone:
+
+```bash
+cd /path/to/cheap-llm-router
+git pull
+pipx reinstall cheap-llm-router
+```
+
+If you installed with `--editable`, just `git pull` is enough — your local changes are picked up immediately.

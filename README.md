@@ -1,106 +1,123 @@
 # cheap-llm-router
 
-Delegate **read-for-context** summaries from Claude Code to a cheap
-OpenAI-compatible model (Kimi K2, DeepSeek V3, Gemini Flash, …) via
-OpenRouter or any compatible provider — so the expensive Anthropic
-subscription is not burned on file reads.
+**Save your Claude (or Codex) subscription tokens by letting a cheaper model do the file-reading for you.**
 
-Phase 1 ships exactly one command — `cheap read` — plus a CLAUDE.md
-rule that tells Claude when to use it. Proxy and additional commands
-are deferred until usage data shows they are needed.
+🌐 **Languages:** **English** · [Українська](README.uk.md) · [Русский](README.ru.md)
 
-> Full design: `docs/superpowers/specs/2026-05-05-cheap-llm-router-design.md`.
+---
 
-## Install
+## What it does, in plain words
 
-```bash
-pipx install /Users/admin/_Projects/cheap-llm-router
-```
+When Claude Code or OpenAI Codex CLI opens files for you, every line of those files gets fed into your expensive subscription model. Five-file reads alone burn around 8 000 tokens. A few of those per day and you bump into the weekly limit.
 
-For local development:
+`cheap-llm-router` adds one small command: **`cheap`**. It sends those files to a much cheaper model (DeepSeek, Kimi, Gemini Flash, your pick) and gets back a short summary — typically 600 tokens. Your expensive model receives the **answer**, not the raw bytes.
 
-```bash
-pipx install --editable /Users/admin/_Projects/cheap-llm-router
-# or
-pip install -e ".[test]"
-```
+Same idea for the chat history: when you're about to compact a long session or update docs from what you just did, `cheap extract` summarises the session log so the expensive model doesn't have to re-read it.
 
-## First-time setup
+## Why you might want this
 
-```bash
-export OPENROUTER_API_KEY=sk-or-...           # add to your shell profile
-cheap config path                              # creates default config, prints location
-cheap config check                             # verify the env var is visible
-$EDITOR ~/.config/cheap-llm/config.yaml        # adjust model if needed
+- **Hit the weekly limit less often.** Or never.
+- **Same workflow.** You keep typing in Claude or Codex; `cheap` plugs in via a one-line rule in `CLAUDE.md` / `AGENTS.md`.
+- **Any cheap model.** Works with anything OpenAI-compatible. Default is `deepseek/deepseek-v4-pro` (~$0.005 per call, 1M-token context window).
+- **Two CLIs supported.** Claude Code and OpenAI Codex CLI, with auto-detection of which one you're in.
+- **Honest about what it doesn't do.** It won't help with debugging, security audits, or tasks where you need exact text — for those it tells the expensive model to read the files itself.
 
-cheap install-claude-rule                      # idempotent CLAUDE.md install
-```
+## Quick start (3 steps)
 
-### Where to put the API key
-
-Two supported placements — pick one:
-
-| | Where the key lives | When to use |
-|---|---|---|
-| **`api_key_env: OPENROUTER_API_KEY`** (default) | Shell environment, e.g. exported in `~/.zshrc` | **Recommended.** Key stays out of dotfiles, screenshots, backups. |
-| **`api_key: "sk-or-v1-..."`** (alternative) | Literal value in `~/.config/cheap-llm/config.yaml` | When exporting env vars is inconvenient (sandboxed shells, GUI launchers, restricted environments). |
-
-If both are set, `api_key` wins (explicit beats indirect).
-
-When `api_key:` is used, `cheap config show` automatically redacts the
-value as `***REDACTED***`. **`cat` does not** — so treat the YAML
-file as sensitive: keep it out of git, iCloud / Dropbox sync, and
-screenshots.
-
-## Usage
+### 1. Install
 
 ```bash
-cheap read src/auth.py src/db.py src/handlers.py -q "explain shared state"
+pipx install git+https://github.com/Lexus2016/cheap-llm-router.git
 ```
 
-Returns a ~600-token markdown summary on stdout. A telemetry line is
-written to stderr after the call:
+(`pipx` instead of `pip` so it gets its own clean Python environment. On macOS: `brew install pipx`.)
+
+### 2. Set your OpenRouter key
+
+Sign up free at <https://openrouter.ai/>, top up a few dollars, copy your key, then:
+
+```bash
+echo 'export OPENROUTER_API_KEY=sk-or-v1-...' >> ~/.zshrc
+source ~/.zshrc
+cheap config check       # → OK
+```
+
+### 3. Tell Claude / Codex about it
+
+```bash
+cheap install-claude-rule
+```
+
+That's it. From now on, when Claude or Codex is about to read a bunch of files just to gain context, it will use `cheap` automatically.
+
+## The two main commands
+
+### `cheap read FILE…`
+
+Summarises a list of files. Use it when you have a **question** about the code, not a task to do.
+
+```bash
+cheap read src/auth.py src/db.py src/api.py -q "how does login work?"
+```
+
+You'll get a 600-token markdown summary on stdout, and one line on stderr telling you exactly what it cost:
 
 ```
 [cheap] files=3 input_chars=15823 output_tokens=587 model=deepseek/deepseek-v4-pro elapsed_ms=2143
 ```
 
-### Secrets guard
+### `cheap extract`
 
-`cheap read` refuses by default to read files whose basenames look
-like secrets (`.env*`, `*.key`, `*.pem`, `id_rsa`, `credentials.json`,
-`.npmrc`, …). Override with `--include-sensitive` (writes a stderr
-warning naming the files) — but please don't.
-
-### CLI
+Summarises **the current session's chat history**. Most useful right before `/compact` in Claude or when you're about to update documentation from what you just did.
 
 ```bash
-cheap read [-q QUESTION] [--include-sensitive] FILE [FILE...]
-cheap config path             # print resolved config path
-cheap config show             # print raw config (no env-substitution)
-cheap config check            # validate env vars; OK or "missing env: <NAME>"
-cheap install-claude-rule [--force]
+cheap extract -q "what did we decide today?"
 ```
 
-## Tests
+It figures out automatically whether you're in Claude Code or OpenAI Codex CLI and finds the right session file. Pass `--mode messages-only` to keep only chat turns (skip tool noise), or `--tail 50` to keep only the last 50 messages.
 
-```bash
-pip install -e ".[test]"
-pytest                        # unit + secrets + install — no network
-RUN_INTEGRATION=1 pytest      # also runs the OpenRouter integration test
-```
+## Where the API key lives
 
-The integration test asserts both Phase 1 acceptance criteria:
-1. Summary's `output_tokens` ≤ 800 against an ≥ 8 000-token fixture set.
-2. Every public function name in the fixture appears in the summary;
-   no fabricated names slip in.
+Two supported placements — pick one.
 
-## Design
+| Where | When to use |
+|---|---|
+| **`OPENROUTER_API_KEY` shell env var** | **Recommended.** Key never enters a file. |
+| **`api_key:` field** in `~/.config/cheap-llm/config.yaml` | Sandboxed shells, GUI launchers, restricted setups. |
 
-See `docs/superpowers/specs/2026-05-05-cheap-llm-router-design.md`
-for the full Phase 1 design (problem statement, non-goals, phase
-boundaries, secrets-guard rationale, calibration points for Phase 2 / 3).
+If both are set, the YAML wins (explicit beats indirect).
+
+When the key sits in the YAML, `cheap config show` masks it automatically as `***REDACTED***`. But `cat $(cheap config path)` does not — keep that file out of git, iCloud / Dropbox sync, and screenshots.
+
+## Supported tools
+
+- **Claude Code** (Pro / Max subscription) — primary target.
+- **OpenAI Codex CLI** — full support: same `extract` command works on Codex's session JSONL via the `CODEX_THREAD_ID` env var.
+- Anything else that reads `CLAUDE.md` or `AGENTS.md` — drop the rule there and you're done.
+
+## Frequently asked questions
+
+**Q: Will the AI know when to use `cheap` and when not to?**
+A: Yes — `cheap install-claude-rule` writes a precise checklist into `CLAUDE.md` (and `AGENTS.md`). The rule says: *use `cheap` only when the question wants an answer, not exact text. Skip it for editing, security audits, or anything where the AI needs to quote or compare exact lines.*
+
+**Q: Is it safe with secrets?**
+A: `cheap read` refuses by default to send any file whose name matches `.env*`, `*.key`, `*.pem`, `id_rsa`, `credentials.json`, etc. Override with `--include-sensitive` (writes a warning), but please don't.
+
+**Q: Where does my data actually go?**
+A: To OpenRouter, then to whichever provider you picked (DeepSeek, Moonshot, Google…). If you already use Claude or Codex, your code already goes through one third-party AI vendor — this adds one more, but does not change the model qualitatively.
+
+**Q: How much does it actually save?**
+A: For a typical 5-file context-read: ~600 tokens of cheap-model output replace ~8 000 tokens of expensive-model context window. Roughly 13× cheaper per such operation. Real numbers depend on your workflow — `cheap` writes one telemetry line per call so you can do the math yourself.
+
+**Q: I don't use Claude. Can I use this with just any shell?**
+A: Yes — `cheap read` and `cheap extract` are plain shell commands. Type them yourself, pipe results around, do whatever you want. The `install-claude-rule` step is optional.
+
+## Documentation
+
+- [Install guide](INSTALL.md) — [Українська](INSTALL.uk.md) · [Русский](INSTALL.ru.md)
+- [Uninstall guide](UNINSTALL.md) — [Українська](UNINSTALL.uk.md) · [Русский](UNINSTALL.ru.md)
+- [Design notes](docs/superpowers/specs/2026-05-05-cheap-llm-router-design.md) (English, technical — for contributors)
 
 ## License
 
-MIT.
+MIT — see [LICENSE](LICENSE).

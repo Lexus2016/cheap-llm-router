@@ -1,21 +1,20 @@
 # Uninstall — cheap-llm-router
 
-Reverse exactly what `INSTALL.md` did. You can stop after any step —
-the steps are independent. The order below removes from the lightest
-touch (just disable in Claude) to a complete wipe (no trace left).
+🌐 **Languages:** **English** · [Українська](UNINSTALL.uk.md) · [Русский](UNINSTALL.ru.md)
 
-## 1. Disable the CLAUDE.md rule (so Claude stops calling `cheap`)
+Reverses what [INSTALL.md](INSTALL.md) did. The steps are independent — stop at any point. They're listed from "lightest touch" (just stop using it) to "no trace left".
 
-The rule lives between `## Cheap LLM delegation` and the next `## `
-heading in `~/.claude/CLAUDE.md`. Two options:
+## Step 1 — Stop Claude / Codex from auto-using `cheap`
 
-**a) Manual edit** — open the file and delete that section:
+The rule lives in `~/.claude/CLAUDE.md` between `## Cheap LLM Delegation — Mandatory Checkpoint` and the next `## ` heading. Two options:
+
+**(a) Edit by hand** — open the file and delete that section:
 
 ```bash
 $EDITOR ~/.claude/CLAUDE.md
 ```
 
-**b) `sed` removal** — automated, also makes a backup:
+**(b) Automatic, with backup** — copy-paste this whole block into the terminal:
 
 ```bash
 cp ~/.claude/CLAUDE.md ~/.claude/CLAUDE.md.bak
@@ -23,46 +22,41 @@ python3 - <<'PY'
 import re, pathlib
 p = pathlib.Path.home() / ".claude" / "CLAUDE.md"
 text = p.read_text(encoding="utf-8")
-m = re.search(r"^## Cheap LLM delegation\s*$", text, re.MULTILINE)
+m = re.search(r"^##\s+Cheap LLM\b.*$", text, re.MULTILINE | re.IGNORECASE)
 if m:
     start = m.start()
     rest = text[m.end():]
     nm = re.search(r"^##\s", rest, re.MULTILINE)
-    end = m.end() + nm.start() if nm else len(text)
-    text = (text[:start].rstrip() + "\n") if (text[:start].strip()) else ""
-    text += rest[nm.start():] if nm else ""
-    p.write_text(text, encoding="utf-8")
+    body_end = m.end() + nm.start() if nm else len(text)
+    new = text[:start].rstrip() + "\n"
+    if nm:
+        new += "\n" + text[body_end:]
+    p.write_text(new, encoding="utf-8")
     print("removed")
 else:
     print("section not present — nothing to do")
 PY
 ```
 
+If you also have an `AGENTS.md` (for Codex) with the same section, repeat the same on it.
+
 Verify nothing remains:
 
 ```bash
-grep -n "Cheap LLM delegation" ~/.claude/CLAUDE.md || echo "clean"
+grep -n "Cheap LLM" ~/.claude/CLAUDE.md || echo "clean"
 ```
 
-After this, the CLI still works if invoked manually but Claude no
-longer auto-delegates.
+After this, the `cheap` command still works if you call it yourself, but Claude / Codex no longer use it automatically.
 
-## 2. Remove the user config
+## Step 2 — Delete the config file
 
 ```bash
 rm -rf ~/.config/cheap-llm
 ```
 
-Verify:
+This removes `config.yaml`. There's no other state — `cheap` doesn't keep logs, caches, or databases of its own.
 
-```bash
-test -e ~/.config/cheap-llm && echo "still there" || echo "gone"
-```
-
-This deletes `config.yaml`. There is no other state — `cheap` writes
-no logs, no caches, no databases.
-
-## 3. Uninstall the CLI
+## Step 3 — Remove the `cheap` command
 
 ```bash
 pipx uninstall cheap-llm-router
@@ -72,79 +66,62 @@ Verify:
 
 ```bash
 which cheap || echo "gone"
-pipx list | grep -i cheap-llm-router || echo "not in pipx"
 ```
 
-If you used `pipx install --editable`, the same command removes it.
-
-If you installed with plain `pip` instead:
+If you installed it some other way:
 
 ```bash
-pip uninstall -y cheap-llm-router
+pip uninstall -y cheap-llm-router      # plain pip
+sudo pip uninstall -y cheap-llm-router # if installed system-wide as root
 ```
 
-If you ever installed the package globally as root (rare), use
-`sudo pip uninstall -y cheap-llm-router`.
+## Step 4 — Remove the API key from your shell
 
-## 4. Remove the OPENROUTER_API_KEY env var
-
-Edit your shell profile and delete the `export OPENROUTER_API_KEY=...`
-line you added during install:
+Open the rc file you edited during install:
 
 ```bash
-$EDITOR ~/.zshrc        # or ~/.bashrc, ~/.config/fish/config.fish, etc.
+$EDITOR ~/.zshrc        # or ~/.bashrc, ~/.config/fish/config.fish
 ```
 
-Reload the shell or open a new terminal. Verify:
+Delete the `export OPENROUTER_API_KEY=…` line, then open a new terminal.
+
+Verify:
 
 ```bash
 echo "${OPENROUTER_API_KEY:-(unset)}"
 # → (unset)
 ```
 
-(Optional but recommended: rotate / revoke the key in the OpenRouter
-dashboard so an old shell session can't reuse it.)
+**Recommended bonus:** rotate or revoke the key at <https://openrouter.ai/keys> so an old saved copy can't be reused.
 
-## 5. (Optional) Delete the source tree
+## Step 5 (Optional) — Delete the source tree
+
+If you cloned the repo locally and want it gone:
 
 ```bash
-rm -rf /Users/admin/_Projects/cheap-llm-router
+rm -rf /path/to/cheap-llm-router
 ```
 
-Verify:
+Removes the README, INSTALL/UNINSTALL guides, source code, tests, design docs, and `.git` history. After this, no trace of the project remains on disk.
+
+## Quick check that everything's gone
+
+If you did all 5 steps, this should print all five "gone"-ish lines:
 
 ```bash
-test -e /Users/admin/_Projects/cheap-llm-router && echo "still there" || echo "gone"
-```
-
-This removes the spec, tests, fixtures, source, README, INSTALL,
-UNINSTALL, and `.git` history. After this, no trace of the project
-remains on disk.
-
-## Roll-back checklist
-
-If you completed all 5 steps, this should be true:
-
-```bash
-which cheap                                             # → command not found
+which cheap                                                  # → not found
 test -e ~/.config/cheap-llm && echo "config" || echo "config gone"
-grep -c "Cheap LLM delegation" ~/.claude/CLAUDE.md      # → 0
-echo "${OPENROUTER_API_KEY:-(unset)}"                    # → (unset)
-test -e /Users/admin/_Projects/cheap-llm-router \
-  && echo "source tree" || echo "source tree gone"
+grep -c "Cheap LLM" ~/.claude/CLAUDE.md                       # → 0
+echo "${OPENROUTER_API_KEY:-(unset)}"                         # → (unset)
+test -e /path/to/cheap-llm-router && echo "src" || echo "src gone"
 ```
 
-All five lines should report "gone" / "0" / "(unset)" / "command not
-found".
+## Where the project does and doesn't write
 
-## Roll-back from a partial install
+For peace of mind — `cheap` writes only to:
 
-You can run the steps in any order and stop at any time. The CLI
-writes nothing outside of:
+- `~/.local/bin/cheap` (the command itself; removed by step 3)
+- `~/.config/cheap-llm/config.yaml` (created on first run; removed by step 2)
+- `~/.claude/CLAUDE.md` and / or `AGENTS.md` (only if you ran `install-claude-rule`; removed by step 1)
 
-- `~/.local/bin/cheap` (installed by pipx — removed by step 3)
-- `~/.config/cheap-llm/config.yaml` (auto-created on first run — removed by step 2)
-- `~/.claude/CLAUDE.md` (only modified if you ran `cheap install-claude-rule` — see step 1)
-
-No system-wide files, no daemons, no scheduled jobs, no network
-side-effects beyond the OpenRouter API calls you triggered yourself.
+No system files, no daemons, no scheduled jobs, no network calls beyond the OpenRouter API requests you trigger yourself.

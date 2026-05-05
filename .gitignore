@@ -1,3 +1,4 @@
+# Python
 .venv/
 __pycache__/
 *.pyc
@@ -6,3 +7,12 @@ __pycache__/
 .coverage
 build/
 dist/
+
+# Editors
+.idea/
+.vscode/
+*.swp
+.DS_Store
+
+# Local config (may contain literal API keys)
+.cheap-llm.local.yaml
