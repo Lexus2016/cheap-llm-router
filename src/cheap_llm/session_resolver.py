@@ -29,6 +29,16 @@ from pathlib import Path
 CACHE_SUBDIR = Path(".cache") / "cheap-llm" / "sessions"
 
 
+def _hook_cache_dir(home: Path, env: dict[str, str]) -> Path:
+    """Resolve where the SessionStart hook writes <PPID>.txt files.
+
+    Honours $XDG_CACHE_HOME for consistency with usage_log; otherwise
+    falls back to ~/.cache.
+    """
+    base = env.get("XDG_CACHE_HOME") or str(home / ".cache")
+    return Path(base) / "cheap-llm" / "sessions"
+
+
 class NoSessionFound(RuntimeError):
     pass
 
@@ -89,8 +99,8 @@ def resolve_session(
             f"under {_codex_sessions_root(home, env)}"
         )
 
-    # 4. Claude SessionStart hook wrote ~/.cache/cheap-llm/sessions/<PPID>.txt
-    hook_file = home / CACHE_SUBDIR / f"{ppid}.txt"
+    # 4. Claude SessionStart hook wrote $XDG_CACHE_HOME/cheap-llm/sessions/<PPID>.txt
+    hook_file = _hook_cache_dir(home, env) / f"{ppid}.txt"
     if hook_file.exists():
         path_str = hook_file.read_text(encoding="utf-8").strip()
         if path_str:
