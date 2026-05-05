@@ -22,7 +22,7 @@ def test_install_creates_file_when_missing(tmp_path: Path, capsys) -> None:
     assert rc == install_cmd.EXIT_OK
     text = target.read_text(encoding="utf-8")
     assert "Cheap LLM Delegation" in text
-    assert "Mandatory Checkpoint" in text
+    assert "Default Flip" in text
     err = capsys.readouterr().err
     assert "installed: created" in err
 
@@ -36,7 +36,7 @@ def test_install_appends_when_section_absent(tmp_path: Path) -> None:
     assert "## Other" in text
     assert "Something." in text
     assert "Cheap LLM Delegation" in text
-    assert "Mandatory Checkpoint" in text
+    assert "Default Flip" in text
 
 
 def test_install_is_idempotent_when_section_present(
@@ -64,7 +64,7 @@ def test_force_overwrites_existing_block(tmp_path: Path) -> None:
     assert rc == install_cmd.EXIT_OK
     text = target.read_text(encoding="utf-8")
     assert "old content" not in text
-    assert "Mandatory Checkpoint" in text
+    assert "Default Flip" in text
     assert "## After" in text
     assert "kept." in text
     # Blank line preserved between our snippet and the next section.
@@ -80,7 +80,7 @@ def test_force_replaces_block_when_last_section(tmp_path: Path) -> None:
     assert rc == install_cmd.EXIT_OK
     text = target.read_text(encoding="utf-8")
     assert "old body" not in text
-    assert "Mandatory Checkpoint" in text
+    assert "Default Flip" in text
     assert text.startswith("# Top")
 
 
@@ -116,7 +116,7 @@ def test_force_replaces_legacy_lowercase_heading(tmp_path: Path) -> None:
     text = target.read_text(encoding="utf-8")
     assert "legacy body" not in text
     assert text.count("## Cheap LLM") == 1
-    assert "Mandatory Checkpoint" in text
+    assert "Default Flip" in text
 
 
 # --- multi-target install_rule ----------------------------------------------
@@ -181,7 +181,7 @@ def test_install_rule_writes_to_codex_agents_md(tmp_path: Path, capsys) -> None:
     assert target.exists()
     text = target.read_text(encoding="utf-8")
     assert "Cheap LLM Delegation" in text
-    assert "Mandatory Checkpoint" in text
+    assert "Default Flip" in text
     err = capsys.readouterr().err
     assert "installed: created" in err
     assert str(target) in err
@@ -192,8 +192,8 @@ def test_install_rule_target_all_writes_to_both(tmp_path: Path) -> None:
     assert rc == install_rule_cmd.EXIT_OK
     claude = (tmp_path / ".claude" / "CLAUDE.md").read_text(encoding="utf-8")
     codex = (tmp_path / ".codex" / "AGENTS.md").read_text(encoding="utf-8")
-    assert "Mandatory Checkpoint" in claude
-    assert "Mandatory Checkpoint" in codex
+    assert "Default Flip" in claude
+    assert "Default Flip" in codex
 
 
 def test_install_rule_auto_with_both_dirs_writes_to_both(tmp_path: Path) -> None:
@@ -222,5 +222,5 @@ def test_install_rule_force_replaces_in_codex_agents_md(tmp_path: Path) -> None:
     assert rc == install_rule_cmd.EXIT_OK
     text = target.read_text(encoding="utf-8")
     assert "stale" not in text
-    assert "Mandatory Checkpoint" in text
+    assert "Default Flip" in text
     assert text.count("## Cheap LLM") == 1
