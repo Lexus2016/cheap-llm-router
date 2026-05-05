@@ -16,8 +16,17 @@ from pathlib import Path
 EXIT_OK = 0
 EXIT_GENERIC_ERROR = 1
 
-_HEADING = "## Cheap LLM delegation"
-_HEADING_RE = re.compile(rf"^{re.escape(_HEADING)}\s*$", re.MULTILINE)
+# Match any "## Cheap LLM ..." heading, case-insensitive. This deliberately
+# accepts both the legacy "## Cheap LLM delegation" form and the current
+# "## Cheap LLM Delegation — Mandatory Checkpoint" form, so re-running
+# `cheap install-claude-rule` on an older CLAUDE.md still recognises the
+# existing block and stays idempotent (without --force) or replaces it
+# in place (with --force). Be lenient about what you read.
+_HEADING_PREFIX = "## Cheap LLM"
+_HEADING_RE = re.compile(
+    rf"^{re.escape(_HEADING_PREFIX)}\b.*$",
+    re.MULTILINE | re.IGNORECASE,
+)
 _NEXT_HEADING_RE = re.compile(r"^##\s", re.MULTILINE)
 
 
