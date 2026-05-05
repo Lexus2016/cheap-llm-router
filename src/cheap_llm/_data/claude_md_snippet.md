@@ -45,11 +45,20 @@ You can't see your live token count. Watch for behaviour signals:
 - ~30+ user turns OR 5+ commits this session
 
 Then:
-1. `cheap extract --tail 200 -q "mission, decisions, files, state, open"`
-2. Show the digest to the user.
-3. Recommend: "Session at ~Nk jsonl tokens; continue in a fresh
+1. `cheap extract --tail 500 -q "mission, decisions, files, state, open, gotchas"`
+   - Default `--mode full` (NOT `--mode messages-only`): tool-use events
+     are essential for the "Files touched" section. Dropping them loses
+     which files were edited / created / read across the session.
+   - 500 ≈ rich-but-bounded recent history. Smaller `--tail` (e.g. 200)
+     misses too much; bigger costs more on cheap-side without
+     proportional digest quality.
+2. If the session is huge (`wc -l <jsonl>` > 1500 events OR jsonl > 2 MB),
+   the digest is necessarily incomplete. Append `git log --oneline -30`
+   to the handoff so the early-arc commits are recoverable.
+3. Show the digest (and git log if added) to the user.
+4. Recommend: "Session at ~Nk jsonl tokens; continue in a fresh
    session — paste the digest above as the first message."
-4. WAIT for the user. Do NOT auto-continue in the bloated session.
+5. WAIT for the user. Do NOT auto-continue in the bloated session.
 
 Why: Claude Code's own auto-compact runs through your expensive model
 (~$0.04 per pass). `cheap extract` produces an equivalent digest at
