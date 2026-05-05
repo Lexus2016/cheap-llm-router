@@ -122,50 +122,50 @@ def test_force_replaces_legacy_lowercase_heading(tmp_path: Path) -> None:
 # --- multi-target install_rule ----------------------------------------------
 
 def test_resolve_targets_claude_only(tmp_path: Path) -> None:
-    paths = install_rule_cmd.resolve_targets("claude", home=tmp_path)
-    assert paths == [tmp_path / ".claude" / "CLAUDE.md"]
+    pairs = install_rule_cmd.resolve_targets("claude", home=tmp_path)
+    assert pairs == [(tmp_path / ".claude" / "CLAUDE.md", "claude")]
 
 
 def test_resolve_targets_codex_only(tmp_path: Path) -> None:
-    paths = install_rule_cmd.resolve_targets("codex", home=tmp_path)
-    assert paths == [tmp_path / ".codex" / "AGENTS.md"]
+    pairs = install_rule_cmd.resolve_targets("codex", home=tmp_path)
+    assert pairs == [(tmp_path / ".codex" / "AGENTS.md", "codex")]
 
 
 def test_resolve_targets_all(tmp_path: Path) -> None:
-    paths = install_rule_cmd.resolve_targets("all", home=tmp_path)
-    assert paths == [
-        tmp_path / ".claude" / "CLAUDE.md",
-        tmp_path / ".codex" / "AGENTS.md",
+    pairs = install_rule_cmd.resolve_targets("all", home=tmp_path)
+    assert pairs == [
+        (tmp_path / ".claude" / "CLAUDE.md", "claude"),
+        (tmp_path / ".codex" / "AGENTS.md", "codex"),
     ]
 
 
 def test_resolve_targets_auto_detects_both(tmp_path: Path) -> None:
-    """Both agent dirs present → install into both."""
+    """Both agent dirs present → install into both, each with its own kind."""
     (tmp_path / ".claude").mkdir()
     (tmp_path / ".codex").mkdir()
-    paths = install_rule_cmd.resolve_targets("auto", home=tmp_path)
-    assert tmp_path / ".claude" / "CLAUDE.md" in paths
-    assert tmp_path / ".codex" / "AGENTS.md" in paths
+    pairs = install_rule_cmd.resolve_targets("auto", home=tmp_path)
+    assert (tmp_path / ".claude" / "CLAUDE.md", "claude") in pairs
+    assert (tmp_path / ".codex" / "AGENTS.md", "codex") in pairs
 
 
 def test_resolve_targets_auto_only_claude(tmp_path: Path) -> None:
     (tmp_path / ".claude").mkdir()
-    paths = install_rule_cmd.resolve_targets("auto", home=tmp_path)
-    assert paths == [tmp_path / ".claude" / "CLAUDE.md"]
+    pairs = install_rule_cmd.resolve_targets("auto", home=tmp_path)
+    assert pairs == [(tmp_path / ".claude" / "CLAUDE.md", "claude")]
 
 
 def test_resolve_targets_auto_only_codex(tmp_path: Path) -> None:
     (tmp_path / ".codex").mkdir()
-    paths = install_rule_cmd.resolve_targets("auto", home=tmp_path)
-    assert paths == [tmp_path / ".codex" / "AGENTS.md"]
+    pairs = install_rule_cmd.resolve_targets("auto", home=tmp_path)
+    assert pairs == [(tmp_path / ".codex" / "AGENTS.md", "codex")]
 
 
 def test_resolve_targets_auto_falls_back_to_claude_when_neither_present(
     tmp_path: Path,
 ) -> None:
     """Bootstrap behaviour on a fresh machine — never returns empty list."""
-    paths = install_rule_cmd.resolve_targets("auto", home=tmp_path)
-    assert paths == [tmp_path / ".claude" / "CLAUDE.md"]
+    pairs = install_rule_cmd.resolve_targets("auto", home=tmp_path)
+    assert pairs == [(tmp_path / ".claude" / "CLAUDE.md", "claude")]
 
 
 def test_resolve_targets_invalid_value_raises() -> None:
@@ -291,6 +291,77 @@ def test_force_upgrade_replaces_block_and_marker(tmp_path: Path) -> None:
     assert "stale body" not in text
     assert "fresh body" in text
     assert "v=2" in text
+
+
+# --- per-target template rendering ------------------------------------------
+
+def test_load_snippet_claude_substitutes_claude_specific_bits() -> None:
+    snippet = install_rule_cmd._load_snippet("claude")
+    assert "{" not in snippet or "{AGENT_NAME}" not in snippet  # no placeholders left
+    assert "Claude Code" in snippet
+    assert "~/.claude/projects/" in snippet
+    assert "Claude Code statusline" in snippet
+    # Codex-specific markers must NOT leak into claude rendering.
+    assert "Codex CLI" not in snippet
+    assert "CODEX_THREAD_ID" not in snippet
+
+
+def test_load_snippet_codex_substitutes_codex_specific_bits() -> None:
+    snippet = install_rule_cmd._load_snippet("codex")
+    assert "Codex CLI" in snippet
+    assert "CODEX_THREAD_ID" in snippet
+    assert "~/.codex/sessions/" in snippet
+    # Claude-specific bits must NOT leak.
+    assert "Claude Code statusline" not in snippet
+    assert "~/.claude/projects/" not in snippet
+
+
+def test_load_snippet_generic_uses_neutral_wording() -> None:
+    snippet = install_rule_cmd._load_snippet("generic")
+    assert "your agent" in snippet
+    # Neither agent's specific paths should appear in the generic rendering.
+    assert "~/.claude/projects/" not in snippet
+    assert "~/.codex/sessions/" not in snippet
+
+
+def test_load_snippet_unknown_kind_raises() -> None:
+    with pytest.raises(ValueError, match="unknown rule kind"):
+        install_rule_cmd._load_snippet("notakind")
+
+
+def test_load_snippet_leaves_no_placeholders_in_any_kind() -> None:
+    """Regression guard: every {PLACEHOLDER} the template defines must be in
+    every kind's vars dict, otherwise users would see literal `{NAME}` in
+    their CLAUDE.md / AGENTS.md."""
+    import re
+
+    placeholder_re = re.compile(r"\{[A-Z_][A-Z0-9_]+\}")
+    for kind in install_rule_cmd.VALID_KINDS:
+        snippet = install_rule_cmd._load_snippet(kind)
+        leftovers = placeholder_re.findall(snippet)
+        assert leftovers == [], f"kind={kind!r} left placeholders: {leftovers}"
+
+
+def test_install_rule_target_codex_renders_codex_kind(tmp_path: Path) -> None:
+    """End-to-end: --target codex must write Codex-specific body, not Claude's."""
+    rc = install_rule_cmd.run(target="codex", home=tmp_path)
+    assert rc == install_rule_cmd.EXIT_OK
+    text = (tmp_path / ".codex" / "AGENTS.md").read_text(encoding="utf-8")
+    assert "Codex CLI" in text
+    assert "CODEX_THREAD_ID" in text
+    assert "Claude Code statusline" not in text
+
+
+def test_install_rule_target_all_renders_each_kind_separately(tmp_path: Path) -> None:
+    rc = install_rule_cmd.run(target="all", home=tmp_path)
+    assert rc == install_rule_cmd.EXIT_OK
+    claude = (tmp_path / ".claude" / "CLAUDE.md").read_text(encoding="utf-8")
+    codex = (tmp_path / ".codex" / "AGENTS.md").read_text(encoding="utf-8")
+    # Each file gets its own agent's references.
+    assert "Claude Code statusline" in claude
+    assert "Codex CLI" not in claude
+    assert "CODEX_THREAD_ID" in codex
+    assert "Claude Code statusline" not in codex
 
 
 def test_block_without_marker_treated_as_v1(tmp_path: Path) -> None:
