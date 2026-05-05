@@ -199,7 +199,16 @@ On first invocation of **any** subcommand (including `cheap read`),
 if the config file is missing, the CLI writes the template above to
 that path, prints `created default config at <path>` to stderr, and
 proceeds — `cheap read` never fails just because config does not yet
-exist. When `-q` is omitted, `{question_or_overview}` is substituted
+exist.
+
+Template substitution uses `str.format_map` with a `dict` subclass
+whose `__missing__(key)` returns `"{" + key + "}"` — so user-added
+literal `{...}` placeholders in custom prompts are preserved
+verbatim instead of raising `KeyError`. Only the three documented
+keys (`max_summary_tokens`, `question_or_overview`, `files_block`)
+are guaranteed to be substituted; anything else is left as written.
+
+When `-q` is omitted, `{question_or_overview}` is substituted
 with the literal string
 `(general structural overview — no specific question)`.
 
@@ -315,8 +324,8 @@ summary. A second risk is **secrets exfiltration**. Mitigations:
 
 | Layer | Tool | Scope |
 |-------|------|-------|
-| Unit | pytest, `respx` or `openai` mock | CLI argparsing, file reading, prompt assembly, error paths, install-claude-rule idempotency |
-| Secrets | pytest | `tests/test_secrets_guard.py`: refusal on `.env.test`, exit code, no provider call |
+| Unit | pytest, `respx` or `openai` mock | CLI argparsing, file reading, prompt assembly, error paths, `install-claude-rule` idempotency AND `--force` overwrite-and-replace path |
+| Secrets | pytest | `tests/test_secrets_guard.py`: (a) refusal on `.env.test` with exit code 2 and no provider call; (b) `--include-sensitive` override proceeds with a stderr warning naming the file |
 | Contract | pytest with recorded `openai` response | Confirms request body matches expected shape |
 | Integration | pytest, real OpenRouter, gated env | `cheap read` against `sample_module` fixture, asserts both fidelity & token-reduction acceptance criteria from §2 |
 
