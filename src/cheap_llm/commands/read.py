@@ -19,13 +19,26 @@ EXIT_PROVIDER_ERROR = 4
 _NO_QUESTION = "(general structural overview — no specific question)"
 
 
+class _ReadFileError(ValueError):
+    """Raised by _read_files for a non-utf-8 / unreadable file.
+
+    Subclass of ValueError so callers can catch it specifically and
+    surface a structured EXIT_GENERIC_ERROR instead of crashing with
+    SystemExit (which Python prints separately).
+    """
+
+
 def _read_files(paths: Sequence[Path]) -> str:
     chunks: list[str] = []
     for p in paths:
         try:
             content = p.read_text(encoding="utf-8")
         except UnicodeDecodeError as e:
-            raise SystemExit(_err(f"binary file or non-utf-8 content: {p} ({e})"))
+            raise _ReadFileError(
+                f"binary file or non-utf-8 content: {p} ({e})"
+            ) from e
+        except OSError as e:
+            raise _ReadFileError(f"cannot read {p}: {e}") from e
         chunks.append(f"--- FILE: {p} ---\n{content}")
     return "\n\n".join(chunks)
 
@@ -73,7 +86,12 @@ def run(files: Sequence[str], question: str | None,
             file=sys.stderr,
         )
 
-    files_block = _read_files(paths)
+    try:
+        files_block = _read_files(paths)
+    except _ReadFileError as e:
+        _err(str(e))
+        return EXIT_GENERIC_ERROR
+
     if len(files_block) > cfg.read.max_input_chars:
         _err(
             f"concatenated input ({len(files_block)} chars) exceeds "

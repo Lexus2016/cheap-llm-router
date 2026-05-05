@@ -73,7 +73,11 @@ def run(force: bool = False, target: Path | None = None) -> int:
         return EXIT_OK
 
     start, end = bounds
-    new_text = text[:start] + snippet + text[end:]
+    trailing = text[end:]
+    # Snippet ends with a single "\n"; if a next "## " heading follows,
+    # insert one more "\n" to keep a blank line between the sections.
+    separator = "\n" if trailing.startswith("##") else ""
+    new_text = text[:start] + snippet + separator + trailing
     target.write_text(new_text, encoding="utf-8")
     print(f"installed: replaced section in {target} (--force)", file=sys.stderr)
     return EXIT_OK

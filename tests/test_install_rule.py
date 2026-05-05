@@ -56,6 +56,8 @@ def test_force_overwrites_existing_block(tmp_path: Path) -> None:
     assert "When reading 3+ files only for context" in text
     assert "## After" in text
     assert "kept." in text
+    # Blank line preserved between our snippet and the next section.
+    assert "\n\n## After" in text
 
 
 def test_force_replaces_block_when_last_section(tmp_path: Path) -> None:
