@@ -33,6 +33,35 @@ speed-bias spends their subscription cap.
 > Saving anyway? Why?" — if your "why" reduces to "I want it fast",
 > the answer is "delegate, not Read".
 
+### Compaction triggers — STOP and `cheap extract` when ANY fires
+
+You can't see your live token count. Watch for behaviour signals:
+- you refer back to early-session decisions ("as we decided")
+- the user repeats context they already gave this session
+- you're unsure whether something was decided / built / rejected and
+  must scroll back mentally to check
+- you're about to write "TLDR / summary so far" unprompted — your
+  brain is signalling it lost track
+- ~30+ user turns OR 5+ commits this session
+
+Then:
+1. `cheap extract --tail 200 -q "mission, decisions, files, state, open"`
+2. Show the digest to the user.
+3. Recommend: "Session at ~Nk jsonl tokens; continue in a fresh
+   session — paste the digest above as the first message."
+4. WAIT for the user. Do NOT auto-continue in the bloated session.
+
+Why: Claude Code's own auto-compact runs through your expensive model
+(~$0.04 per pass). `cheap extract` produces an equivalent digest at
+~$0.001. On a heavy day, that is the difference between hitting
+your weekly cap on Wednesday vs not at all.
+
+Self-check size when in doubt:
+```
+wc -c ~/.claude/projects/$(pwd | sed 's:[/_]:-:g')/*.jsonl 2>/dev/null | sort -n | tail -1
+```
+If > 2 MB (~500k chars / ~125k tokens) — definitely compact.
+
 ### Honest priors (so you don't argue with yourself)
 - For read-for-context, summary fidelity ≈ raw-bytes reading.
 - You are NOT a better-than-cheap reader for "explain this code" tasks.
