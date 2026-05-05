@@ -28,7 +28,7 @@ def test_load_config_returns_typed_dataclass(tmp_config: Path, monkeypatch) -> N
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_config.parent.parent))
     cfg = config_mod.load_config(tmp_config)
     assert cfg.provider.base_url.startswith("https://openrouter.ai")
-    assert cfg.provider.model == "deepseek/deepseek-v4-pro"
+    assert cfg.provider.model == "deepseek/deepseek-chat-v3-0324"
     # Default template uses api_key_env; api_key is None unless user set it.
     assert cfg.provider.api_key_env == "OPENROUTER_API_KEY"
     assert cfg.provider.api_key is None

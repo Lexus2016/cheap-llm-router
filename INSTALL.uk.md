@@ -91,7 +91,7 @@ cheap read tests/fixtures/sample_module/auth.py -q "що це робить?"
 У відповідь — markdown-резюме у stdout і рядок телеметрії у stderr на кшталт:
 
 ```
-[cheap] files=1 input_chars=4255 output_tokens=587 model=deepseek/deepseek-v4-pro elapsed_ms=2143
+[cheap] files=1 input_chars=4255 output_tokens=587 model=deepseek/deepseek-chat-v3-0324 elapsed_ms=2143
 ```
 
 Готово. Відтепер, коли Claude або Codex збирався б прочитати 3+ файли просто заради контексту, правило підкаже їм спершу викликати `cheap`.

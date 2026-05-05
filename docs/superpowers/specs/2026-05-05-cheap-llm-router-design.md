@@ -160,7 +160,7 @@ provider:
   # If both fields are set, `api_key` wins (explicit beats indirect).
   api_key_env: OPENROUTER_API_KEY
   # api_key: sk-or-v1-...
-  model: deepseek/deepseek-v4-pro      # any OpenAI-compatible model id
+  model: deepseek/deepseek-chat-v3-0324  # any OpenAI-compatible model id
   temperature: 0.2
   request_timeout_seconds: 60
 
@@ -372,20 +372,29 @@ cheap install-claude-rule
 None block implementation. Calibration points to revisit after ≥1 week
 of real use:
 
-- **Model choice default.** *Original choice (2026-05-05 spec draft):*
-  Kimi K2 — picked from Jan-2026 training-data familiarity without
-  checking the live OpenRouter catalog. **Reviewed 2026-05-05 (Phase 2
-  design):** on the 8k-in / 600-out baseline,
-  `deepseek/deepseek-v4-pro` is ~33% cheaper than `kimi-k2` and ships a
-  1M-token context window (vs 131k), which Phase 2 needs for
-  `cheap extract` on long sessions. **Default switched to
-  `deepseek/deepseek-v4-pro`.** *Next review trigger:* whichever fires
-  first — (a) ≥100 calls accumulated in `~/.cache/cheap-llm/usage.log`
-  (Phase 2 adds this log), or (b) a meaningfully cheaper /
-  longer-context candidate appears in the OpenRouter catalog. Quality
-  verification (name-coverage on `tests/fixtures/sample_module/`)
-  deferred to a side-by-side bench before any subsequent default flip,
-  so we never again switch defaults purely on price.
+- **Model choice default.** Three-step history:
+
+  1. *Original (2026-05-05 spec draft):* `moonshotai/kimi-k2` — picked
+     from Jan-2026 training-data familiarity without checking the live
+     OpenRouter catalog.
+  2. *Reviewed 2026-05-05 (Phase 2 design):* switched to
+     `deepseek/deepseek-v4-pro` based on OpenRouter price/context
+     (~33% cheaper than kimi-k2, 1M context). **This was a price-only
+     flip — no quality bench had been run.**
+  3. *Reviewed 2026-05-05 (post-release smoke):* a 17-model regression
+     pass found that `deepseek-v4-pro` is reasoning-capable and
+     silently spends the whole `max_summary_tokens` cap on hidden
+     thinking, leaving zero visible output for the user. Same trap
+     hits `kimi-k2.6`, `kimi-k2-thinking`, `glm-5.1`, `glm-4.7-flash`,
+     `mimo-v2.5`. **Default switched to
+     `deepseek/deepseek-chat-v3-0324`** — verified non-reasoning,
+     164K-token context, ~$0.005 per 4-file typical call.
+
+  *Next review trigger:* whichever fires first — (a) ≥100 calls in
+  `~/.cache/cheap-llm/usage.log` show another model is materially
+  cheaper at equal coverage, or (b) the bundled regression script
+  (`scripts/test-model.sh`) green-lights a new candidate end-to-end.
+  Lesson recorded above: never flip the default on price alone.
 - **Summary size 600 tokens.** Empirical guess. May need 400 or 1000.
 - **`max_input_chars: 400000`.** Roughly 100k tokens; conservative cap
   to avoid surprise OpenRouter charges.

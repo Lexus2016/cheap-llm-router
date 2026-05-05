@@ -28,7 +28,7 @@ provider:
   # redacts this field automatically, but `cat config.yaml` does not.
   api_key_env: OPENROUTER_API_KEY
   # api_key: sk-or-v1-...
-  model: deepseek/deepseek-v4-pro
+  model: deepseek/deepseek-chat-v3-0324
   temperature: 0.2
   request_timeout_seconds: 60
 

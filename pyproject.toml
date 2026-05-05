@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "cheap-llm-router"
-version = "0.2.1"
+version = "0.3.0"
 description = "Delegate read-for-context summaries from Claude Code to a cheap OpenAI-compatible model."
 requires-python = ">=3.11"
 authors = [{ name = "cheap-llm-router authors" }]

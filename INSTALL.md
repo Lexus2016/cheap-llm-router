@@ -91,7 +91,7 @@ cheap read tests/fixtures/sample_module/auth.py -q "what does this do?"
 You'll get a markdown summary on stdout and a telemetry line on stderr that looks like:
 
 ```
-[cheap] files=1 input_chars=4255 output_tokens=587 model=deepseek/deepseek-v4-pro elapsed_ms=2143
+[cheap] files=1 input_chars=4255 output_tokens=587 model=deepseek/deepseek-chat-v3-0324 elapsed_ms=2143
 ```
 
 That's it. From now on, when Claude or Codex would have read 3+ files just for context, the rule tells it to call `cheap` first.
