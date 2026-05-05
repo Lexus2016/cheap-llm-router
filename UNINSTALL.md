@@ -48,13 +48,21 @@ grep -n "Cheap LLM" ~/.claude/CLAUDE.md || echo "clean"
 
 After this, the `cheap` command still works if you call it yourself, but Claude / Codex no longer use it automatically.
 
-## Step 2 — Delete the config file
+## Step 2 — Delete the config file and any caches
 
 ```bash
 rm -rf ~/.config/cheap-llm
+rm -rf "${XDG_CACHE_HOME:-$HOME/.cache}/cheap-llm"
 ```
 
-This removes `config.yaml`. There's no other state — `cheap` doesn't keep logs, caches, or databases of its own.
+The first line removes `config.yaml`. The second clears the usage log (one JSON line per `cheap read` / `cheap extract` call) and any per-PID hint files written by the SessionStart hook. Both are observability — there's no critical state to preserve.
+
+If you installed the SessionStart hook (see `docs/HOOKS.md`), also remove the bundled script and unwire it from `~/.claude/settings.json`:
+
+```bash
+rm -f ~/.claude/hooks/cheap-llm-session.sh
+$EDITOR ~/.claude/settings.json    # remove the SessionStart entry pointing to that script
+```
 
 ## Step 3 — Remove the `cheap` command
 

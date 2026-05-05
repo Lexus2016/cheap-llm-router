@@ -63,17 +63,22 @@ api_key: "sk-or-v1-..."
 
 ## Шаг 3 — Сообщить Claude / Codex о новом инструменте
 
-Это добавит блок в `~/.claude/CLAUDE.md` (и в `AGENTS.md` для Codex, если такой файл есть) с чётким правилом, когда применять `cheap`. Безопасно запускать повторно — не задублирует.
+Правило живёт в файле инструкций вашего AI — `~/.claude/CLAUDE.md` для Claude Code, `~/.codex/AGENTS.md` для OpenAI Codex CLI. Выберите один:
 
 ```bash
-cheap install-claude-rule
+cheap install-rule                  # авто: каждая обнаруженная папка агента
+cheap install-rule --target claude  # только ~/.claude/CLAUDE.md
+cheap install-rule --target codex   # только ~/.codex/AGENTS.md
+cheap install-rule --target all     # обе, независимо от наличия
 ```
 
-Повторный запуск печатает `already installed at …` и ничего не меняет. Чтобы перезаписать блок свежим текстом правила:
+Безопасно запускать повторно — не задублирует. Добавьте `--force`, чтобы перезаписать существующий блок свежим текстом.
 
-```bash
-cheap install-claude-rule --force
-```
+`cheap install-claude-rule` (старое имя из Phase 1) продолжает работать как deprecated alias для `cheap install-rule --target claude`.
+
+### (Необязательно) Точнее определение сессии Claude
+
+Если вы пользуетесь `cheap extract` на сессиях Claude Code — см. [docs/HOOKS.md](docs/HOOKS.md) о необязательном 30-секундном SessionStart hook'е: он делает определение сессии детерминированным, когда у вас одновременно несколько окон Claude в одной директории. Пропустите, если параллельных сессий в одном проекте у вас не бывает.
 
 ## Шаг 4 — Попробовать в деле
 

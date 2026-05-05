@@ -63,17 +63,22 @@ This works the same way, but the secret now lives in a YAML file. Keep it out of
 
 ## Step 3 — Tell Claude / Codex about the new tool
 
-This adds a section to `~/.claude/CLAUDE.md` (and to `AGENTS.md` for Codex if you have one) telling the AI when to use `cheap`. Safe to re-run — it won't duplicate.
+The rule lives in your AI's instructions file — `~/.claude/CLAUDE.md` for Claude Code, `~/.codex/AGENTS.md` for OpenAI Codex CLI. Pick one:
 
 ```bash
-cheap install-claude-rule
+cheap install-rule                  # auto: every agent dir found on disk
+cheap install-rule --target claude  # ~/.claude/CLAUDE.md only
+cheap install-rule --target codex   # ~/.codex/AGENTS.md only
+cheap install-rule --target all     # both, regardless of presence
 ```
 
-Re-running prints `already installed at …` and changes nothing. To overwrite the section with the latest rule text:
+Safe to re-run — won't duplicate. Add `--force` to overwrite an existing section with the latest text.
 
-```bash
-cheap install-claude-rule --force
-```
+`cheap install-claude-rule` (Phase-1 name) still works as a deprecated alias for `cheap install-rule --target claude`.
+
+### (Optional) Stronger Claude session detection
+
+If you use `cheap extract` on Claude Code sessions, see [docs/HOOKS.md](docs/HOOKS.md) for an optional 30-second SessionStart hook install that makes session detection deterministic across multiple Claude windows in the same directory. Skip if you don't run two Claude sessions per project.
 
 ## Step 4 — Try it out
 
