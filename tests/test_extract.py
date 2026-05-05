@@ -276,6 +276,39 @@ def test_extract_codex_fixture_works_too(
     assert "JWT" in fake_provider["prompt"]
 
 
+def test_extract_prompt_uses_dense_resumption_template(
+    tmp_config, fake_provider, monkeypatch
+) -> None:
+    """The prompt sent to the cheap provider must:
+    - declare the 6-section resumption structure (Mission/Decisions/
+      Files/State/Open/Gotchas);
+    - forbid invention with "(unknown from transcript)" guard;
+    - frame the user's `-q` as a section-weight focus, not a replacer.
+
+    Locking these makes a regression to a generic-summary template
+    impossible without a deliberate test edit.
+    """
+    monkeypatch.setenv("OPENROUTER_API_KEY", "sk-test")
+    rc = extract_cmd.run(
+        jsonl=str(CLAUDE_FX),
+        session_id=None,
+        question="what about auth?",
+        mode="full",
+        tail=None,
+    )
+    assert rc == extract_cmd.EXIT_OK
+    prompt = fake_provider["prompt"]
+
+    for marker in ("### Mission", "### Decisions", "### Files",
+                   "### State", "### Open", "### Gotchas"):
+        assert marker in prompt, f"missing section marker: {marker}"
+
+    assert "Never invent" in prompt
+    assert "(unknown from transcript)" in prompt
+    assert "weights sections, does not replace structure" in prompt
+    assert "what about auth?" in prompt
+
+
 def test_extract_provider_error_propagates(
     tmp_config, monkeypatch, capsys
 ) -> None:

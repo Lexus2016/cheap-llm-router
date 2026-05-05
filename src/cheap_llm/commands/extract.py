@@ -30,18 +30,19 @@ EXIT_OVERSIZED = 3
 EXIT_PROVIDER_ERROR = 4
 
 
-_DEFAULT_QUESTION = "(general session summary — what was done, decisions, open threads)"
+_DEFAULT_QUESTION = "(no specific focus — produce a balanced resumption digest)"
 
 
 _PROMPT_TEMPLATE = """\
-You are a session-log summarizer. Read the transcript below (a chat
-history between a developer and an AI coding assistant) and produce a
-factual summary focused on: what was attempted, what decisions were
-made, which files were touched, and any open threads or unfinished
-work. Skip small-talk and tool-output noise. Aim for ~{max_summary_tokens}
-tokens.
+Summarise the developer-AI session below for resumption. Output
+markdown sections (skip empty): ### Mission (1-2 sent), ### Decisions
+(decision + reasoning), ### Files (path: read/edited/created — brief),
+### State (last action + result), ### Open (pending TODOs), ### Gotchas
+(non-obvious facts learned). ~{max_summary_tokens} tokens total.
+Never invent — write "(unknown from transcript)" when in doubt.
+Quote verbatim only for decision text and error messages.
 
-Focus: {question_or_overview}
+Focus (weights sections, does not replace structure): {question_or_overview}
 
 Transcript ({backend}, {n_messages} messages):
 {transcript_block}
