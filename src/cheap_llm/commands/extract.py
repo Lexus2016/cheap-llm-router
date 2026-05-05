@@ -14,6 +14,7 @@ import sys
 from typing import Sequence
 
 from .. import transcript as tr
+from .. import usage_log
 from ..client import MissingApiKey, call_provider
 from ..config import Config, SafeFormatDict, load_config
 from ..session_resolver import (
@@ -145,5 +146,14 @@ def run(
         output_tokens=completion.output_tokens,
         model=cfg.provider.model,
         elapsed_ms=completion.elapsed_ms,
+    )
+    usage_log.record(
+        cmd="extract",
+        model=cfg.provider.model,
+        input_chars=len(transcript_block),
+        output_tokens=completion.output_tokens,
+        elapsed_ms=completion.elapsed_ms,
+        n_messages=len(messages),
+        backend=resolved.backend,
     )
     return EXIT_OK

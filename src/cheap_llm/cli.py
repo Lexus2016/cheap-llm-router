@@ -9,6 +9,7 @@ import typer
 
 from . import config as config_mod
 from . import transcript as tr
+from . import usage_log
 from .commands import read as read_cmd
 from .commands import extract as extract_cmd
 from .commands import install_rule as install_rule_cmd
@@ -18,6 +19,8 @@ app = typer.Typer(no_args_is_help=True, add_completion=False,
                   help="Delegate read-for-context summaries to a cheap LLM.")
 config_app = typer.Typer(no_args_is_help=True, help="Inspect and validate config.")
 app.add_typer(config_app, name="config")
+usage_app = typer.Typer(no_args_is_help=True, help="Inspect the usage log.")
+app.add_typer(usage_app, name="usage")
 
 
 @app.command("read")
@@ -114,6 +117,12 @@ def cmd_extract(
         tail=tail,
     )
     raise typer.Exit(rc)
+
+
+@usage_app.command("path")
+def cmd_usage_path() -> None:
+    """Print the resolved usage-log path (whether or not it exists yet)."""
+    typer.echo(str(usage_log.log_path()))
 
 
 @app.command("install-rule")

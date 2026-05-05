@@ -9,6 +9,7 @@ from typing import Sequence
 from ..config import Config, SafeFormatDict, load_config
 from ..secrets import find_refused
 from ..client import call_provider, MissingApiKey
+from .. import usage_log
 
 EXIT_OK = 0
 EXIT_GENERIC_ERROR = 1
@@ -127,5 +128,13 @@ def run(files: Sequence[str], question: str | None,
         output_tokens=completion.output_tokens,
         model=cfg.provider.model,
         elapsed_ms=completion.elapsed_ms,
+    )
+    usage_log.record(
+        cmd="read",
+        model=cfg.provider.model,
+        input_chars=len(files_block),
+        output_tokens=completion.output_tokens,
+        elapsed_ms=completion.elapsed_ms,
+        files=len(paths),
     )
     return EXIT_OK
