@@ -12,7 +12,6 @@ import os
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
 
 import yaml
 
@@ -99,8 +98,6 @@ class Config:
     provider: ProviderCfg
     read: ReadCfg
     secrets_patterns: tuple[str, ...]
-    raw: dict[str, Any]
-    source: Path
 
 
 def load_config(path: Path | None = None) -> Config:
@@ -125,8 +122,6 @@ def load_config(path: Path | None = None) -> Config:
             prompt_template=read.get("prompt_template") or "",
         ),
         secrets_patterns=tuple(sec.get("patterns") or ()),
-        raw=data,
-        source=p,
     )
 
 
