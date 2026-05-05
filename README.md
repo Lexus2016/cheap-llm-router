@@ -36,6 +36,22 @@ $EDITOR ~/.config/cheap-llm/config.yaml        # adjust model if needed
 cheap install-claude-rule                      # idempotent CLAUDE.md install
 ```
 
+### Where to put the API key
+
+Two supported placements — pick one:
+
+| | Where the key lives | When to use |
+|---|---|---|
+| **`api_key_env: OPENROUTER_API_KEY`** (default) | Shell environment, e.g. exported in `~/.zshrc` | **Recommended.** Key stays out of dotfiles, screenshots, backups. |
+| **`api_key: "sk-or-v1-..."`** (alternative) | Literal value in `~/.config/cheap-llm/config.yaml` | When exporting env vars is inconvenient (sandboxed shells, GUI launchers, restricted environments). |
+
+If both are set, `api_key` wins (explicit beats indirect).
+
+When `api_key:` is used, `cheap config show` automatically redacts the
+value as `***REDACTED***`. **`cat` does not** — so treat the YAML
+file as sensitive: keep it out of git, iCloud / Dropbox sync, and
+screenshots.
+
 ## Usage
 
 ```bash
@@ -46,7 +62,7 @@ Returns a ~600-token markdown summary on stdout. A telemetry line is
 written to stderr after the call:
 
 ```
-[cheap] files=3 input_chars=15823 output_tokens=587 model=moonshotai/kimi-k2 elapsed_ms=2143
+[cheap] files=3 input_chars=15823 output_tokens=587 model=deepseek/deepseek-v4-pro elapsed_ms=2143
 ```
 
 ### Secrets guard

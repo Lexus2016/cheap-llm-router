@@ -52,7 +52,9 @@ def test_run_happy_path_emits_summary_and_telemetry(
     assert "[cheap]" in out.err
     assert "files=2" in out.err
     assert "output_tokens=42" in out.err
-    assert "model=moonshotai/kimi-k2" in out.err
+    # Stable across default-model changes: assert telemetry reports
+    # the same model the CLI actually used (captured by fake_provider).
+    assert f"model={fake_provider['model']}" in out.err
 
     assert "explain" in fake_provider["prompt"]
     assert "--- FILE:" in fake_provider["prompt"]

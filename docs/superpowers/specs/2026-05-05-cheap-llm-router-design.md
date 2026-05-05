@@ -150,8 +150,17 @@ File: `~/.config/cheap-llm/config.yaml` (XDG standard).
 ```yaml
 provider:
   base_url: https://openrouter.ai/api/v1
-  api_key_env: OPENROUTER_API_KEY      # CLI fails fast if env var unset
-  model: moonshotai/kimi-k2            # any OpenAI-compatible model id
+  # Pick exactly ONE of the two credential fields below.
+  # `api_key_env` (preferred): names a shell env var; the secret stays
+  # out of dotfiles. CLI fails fast if the env var is unset.
+  # `api_key` (alternative): holds the literal token directly in YAML.
+  # Useful when an exported env var is inconvenient — but then this
+  # file holds a secret and must stay out of git/iCloud/screenshots.
+  # `cheap config show` redacts the value automatically; `cat` does not.
+  # If both fields are set, `api_key` wins (explicit beats indirect).
+  api_key_env: OPENROUTER_API_KEY
+  # api_key: sk-or-v1-...
+  model: deepseek/deepseek-v4-pro      # any OpenAI-compatible model id
   temperature: 0.2
   request_timeout_seconds: 60
 
@@ -242,13 +251,21 @@ cheap install-claude-rule     # idempotently install ~/.claude/CLAUDE.md section
   error suggesting the user pass fewer files or raise the cap.
 - Output: markdown summary on stdout; telemetry + errors on stderr.
 
-`cheap config show` deliberately does NOT substitute environment
-variables; it prints the literal config (so `api_key_env:
-OPENROUTER_API_KEY` shows as-is). This prevents real API keys ending
-up in pasted screenshots, logs, or shared sessions. To verify the
-provider is reachable, use `cheap config check` (prints `OK` or
-`missing env: OPENROUTER_API_KEY`, never the value; exits 0 / 2
-respectively).
+`cheap config show` redacts the `api_key:` (literal) field with
+`***REDACTED***` and also redacts any `api_key_env:` value that
+*looks* like a token (heuristic: prefix `sk-` / `Bearer ` / `ghp_` /
+`gho_` / `github_pat_`, or >40 chars with no spaces and at least one
+digit). The normal `api_key_env: OPENROUTER_API_KEY` form is preserved
+as-is — it is a variable name, not a secret. The intent is the same
+as before — keep real keys out of pasted screenshots, logs, and
+shared sessions — but enforced now in the print path rather than by
+relying on indirection. To verify the provider is reachable, use
+`cheap config check` (prints `OK`, or a non-revealing error that
+points to the missing mechanism without echoing any value that could
+itself be a secret; exit 0 / 2 respectively). When you genuinely need
+the raw config bytes, `cat $(cheap config path)` does no redaction —
+with the understanding that any screenshot of that output exposes the
+literal key, if one is set.
 
 `cheap install-claude-rule` semantics:
 
@@ -355,9 +372,20 @@ cheap install-claude-rule
 None block implementation. Calibration points to revisit after ≥1 week
 of real use:
 
-- **Model choice default.** Kimi K2 chosen for code-summary quality at
-  ~1/100 Anthropic cost. If DeepSeek V3 proves better in practice,
-  switch the default.
+- **Model choice default.** *Original choice (2026-05-05 spec draft):*
+  Kimi K2 — picked from Jan-2026 training-data familiarity without
+  checking the live OpenRouter catalog. **Reviewed 2026-05-05 (Phase 2
+  design):** on the 8k-in / 600-out baseline,
+  `deepseek/deepseek-v4-pro` is ~33% cheaper than `kimi-k2` and ships a
+  1M-token context window (vs 131k), which Phase 2 needs for
+  `cheap extract` on long sessions. **Default switched to
+  `deepseek/deepseek-v4-pro`.** *Next review trigger:* whichever fires
+  first — (a) ≥100 calls accumulated in `~/.cache/cheap-llm/usage.log`
+  (Phase 2 adds this log), or (b) a meaningfully cheaper /
+  longer-context candidate appears in the OpenRouter catalog. Quality
+  verification (name-coverage on `tests/fixtures/sample_module/`)
+  deferred to a side-by-side bench before any subsequent default flip,
+  so we never again switch defaults purely on price.
 - **Summary size 600 tokens.** Empirical guess. May need 400 or 1000.
 - **`max_input_chars: 400000`.** Roughly 100k tokens; conservative cap
   to avoid surprise OpenRouter charges.
