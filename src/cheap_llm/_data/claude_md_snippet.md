@@ -1,6 +1,7 @@
 ---
 
 ## Cheap LLM Delegation — Default Flip
+<!-- cheap-llm-rule v=1 -->
 
 `cheap read` / `cheap extract` is your DEFAULT for any read-for-context
 work. Native `Read` / `Grep` is the EXCEPTION, not the norm.

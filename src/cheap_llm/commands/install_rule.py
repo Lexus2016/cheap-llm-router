@@ -26,7 +26,7 @@ import re
 import sys
 from importlib.resources import files
 from pathlib import Path
-from typing import Iterable, Sequence
+from typing import Sequence
 
 
 EXIT_OK = 0
@@ -39,6 +39,7 @@ _HEADING_RE = re.compile(
     re.MULTILINE | re.IGNORECASE,
 )
 _NEXT_HEADING_RE = re.compile(r"^##\s", re.MULTILINE)
+_VERSION_RE = re.compile(r"<!--\s*cheap-llm-rule\s+v=(\d+)\s*-->")
 
 
 # --- target resolution -------------------------------------------------------
@@ -113,10 +114,26 @@ def _find_block_bounds(text: str) -> tuple[int, int] | None:
     return start, end
 
 
+def _parse_version(text: str) -> int:
+    """Return rule version embedded in `text`, or 1 if no marker found.
+
+    A missing marker means the block was installed by an old release that
+    pre-dates versioning. Treat those as v1 — they were the first stable
+    rule shape, and bumping shipped to v2+ will then surface the
+    upgrade hint correctly.
+    """
+    m = _VERSION_RE.search(text)
+    return int(m.group(1)) if m else 1
+
+
 def install_into(target: Path, *, force: bool, snippet: str) -> str:
     """Write `snippet` into `target`. Returns a one-line action description.
 
     Idempotent without `force`; with `force` replaces the existing block.
+    Without `force`, if the installed block has an older rule version than
+    the shipped snippet, surfaces an upgrade hint so the user can decide
+    whether to overwrite (since `--force` discards any local edits, e.g.
+    their own ``Past mistakes`` entries).
     """
     if not target.exists():
         target.parent.mkdir(parents=True, exist_ok=True)
@@ -132,7 +149,16 @@ def install_into(target: Path, *, force: bool, snippet: str) -> str:
         return f"installed: appended section to {target}"
 
     if not force:
-        return f"already installed at {target}"
+        start, end = bounds
+        installed_v = _parse_version(text[start:end])
+        shipped_v = _parse_version(snippet)
+        if shipped_v > installed_v:
+            return (
+                f"already installed at {target} (rule v{installed_v}; "
+                f"v{shipped_v} available — run with --force to upgrade, "
+                f"this REPLACES the block including any local edits)"
+            )
+        return f"already installed at {target} (rule v{installed_v})"
 
     start, end = bounds
     trailing = text[end:]

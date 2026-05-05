@@ -224,3 +224,87 @@ def test_install_rule_force_replaces_in_codex_agents_md(tmp_path: Path) -> None:
     assert "stale" not in text
     assert "Default Flip" in text
     assert text.count("## Cheap LLM") == 1
+
+
+# --- rule version marker -----------------------------------------------------
+
+def test_shipped_snippet_carries_version_marker() -> None:
+    """The on-disk snippet must declare a version — otherwise stale-detection
+    silently degrades to 'always v1' on every machine."""
+    snippet = install_rule_cmd._load_snippet()
+    assert install_rule_cmd._VERSION_RE.search(snippet) is not None
+
+
+def test_install_creates_file_with_version_marker(tmp_path: Path) -> None:
+    target = tmp_path / "CLAUDE.md"
+    install_rule_cmd.run(target="claude", home=tmp_path)
+    text = (tmp_path / ".claude" / "CLAUDE.md").read_text(encoding="utf-8")
+    assert install_rule_cmd._VERSION_RE.search(text) is not None
+
+
+def test_outdated_block_surfaces_upgrade_hint_without_force(tmp_path: Path) -> None:
+    """User on rule v1 sees 'v2 available' message; file is NOT modified."""
+    target = tmp_path / "CLAUDE.md"
+    target.write_text(
+        "## Cheap LLM Delegation — Default Flip\n"
+        "<!-- cheap-llm-rule v=1 -->\n\n"
+        "old body the user customised\n",
+        encoding="utf-8",
+    )
+    before = target.read_text(encoding="utf-8")
+    fake_snippet = (
+        "## Cheap LLM Delegation — Default Flip\n"
+        "<!-- cheap-llm-rule v=2 -->\n\nnew body\n"
+    )
+    msg = install_rule_cmd.install_into(target, force=False, snippet=fake_snippet)
+    assert "v1" in msg and "v2" in msg
+    assert "available" in msg
+    assert "--force" in msg
+    # File untouched — user's customisations preserved.
+    assert target.read_text(encoding="utf-8") == before
+
+
+def test_same_version_block_is_silent_idempotent(tmp_path: Path) -> None:
+    target = tmp_path / "CLAUDE.md"
+    snippet = install_rule_cmd._load_snippet()
+    target.write_text(snippet, encoding="utf-8")
+    msg = install_rule_cmd.install_into(target, force=False, snippet=snippet)
+    assert "already installed" in msg
+    assert "available" not in msg
+
+
+def test_force_upgrade_replaces_block_and_marker(tmp_path: Path) -> None:
+    target = tmp_path / "CLAUDE.md"
+    target.write_text(
+        "## Cheap LLM Delegation — Default Flip\n"
+        "<!-- cheap-llm-rule v=1 -->\n\n"
+        "stale body\n",
+        encoding="utf-8",
+    )
+    fake_snippet = (
+        "## Cheap LLM Delegation — Default Flip\n"
+        "<!-- cheap-llm-rule v=2 -->\n\nfresh body\n"
+    )
+    msg = install_rule_cmd.install_into(target, force=True, snippet=fake_snippet)
+    assert "replaced" in msg
+    text = target.read_text(encoding="utf-8")
+    assert "stale body" not in text
+    assert "fresh body" in text
+    assert "v=2" in text
+
+
+def test_block_without_marker_treated_as_v1(tmp_path: Path) -> None:
+    """Pre-versioning installs (no marker at all) still trigger the upgrade hint
+    when shipped is v2+. Regression guard: if `_parse_version` ever returned 0
+    or None for missing markers, the comparison would silently misbehave."""
+    target = tmp_path / "CLAUDE.md"
+    target.write_text(
+        "## Cheap LLM Delegation — Default Flip\n\nlegacy body, no marker\n",
+        encoding="utf-8",
+    )
+    fake_snippet = (
+        "## Cheap LLM Delegation — Default Flip\n"
+        "<!-- cheap-llm-rule v=2 -->\n\nnew\n"
+    )
+    msg = install_rule_cmd.install_into(target, force=False, snippet=fake_snippet)
+    assert "v1" in msg and "v2" in msg
