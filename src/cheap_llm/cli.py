@@ -11,6 +11,7 @@ from . import config as config_mod
 from . import transcript as tr
 from .commands import read as read_cmd
 from .commands import extract as extract_cmd
+from .commands import install_rule as install_rule_cmd
 from .commands import install_claude_rule as install_cmd
 
 app = typer.Typer(no_args_is_help=True, add_completion=False,
@@ -115,6 +116,23 @@ def cmd_extract(
     raise typer.Exit(rc)
 
 
+@app.command("install-rule")
+def cmd_install_rule(
+    target: str = typer.Option(
+        "auto", "--target",
+        help="Where to install: claude | codex | all | auto (auto-detect "
+             "based on which agent dirs exist; default).",
+    ),
+    force: bool = typer.Option(
+        False, "--force",
+        help="Overwrite the existing block in each target if present.",
+    ),
+) -> None:
+    """Install the delegation rule into Claude's CLAUDE.md, Codex's AGENTS.md, or both."""
+    rc = install_rule_cmd.run(target=target, force=force)
+    raise typer.Exit(rc)
+
+
 @app.command("install-claude-rule")
 def cmd_install_claude_rule(
     force: bool = typer.Option(
@@ -122,7 +140,7 @@ def cmd_install_claude_rule(
         help="Overwrite the existing block if present.",
     ),
 ) -> None:
-    """Idempotently install the ## Cheap LLM delegation rule into ~/.claude/CLAUDE.md."""
+    """Deprecated alias of `cheap install-rule --target claude`."""
     rc = install_cmd.run(force=force)
     raise typer.Exit(rc)
 
