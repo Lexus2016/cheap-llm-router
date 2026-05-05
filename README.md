@@ -190,11 +190,25 @@ If both are set, the YAML wins (explicit beats indirect).
 
 When the key sits in the YAML, `cheap config show` masks it automatically as `***REDACTED***`. But `cat $(cheap config path)` does not — keep that file out of git, iCloud / Dropbox sync, and screenshots.
 
-## Supported tools
+## Works with any AI coding agent — the expensive model thinks, the cheap one reads
 
-- **Claude Code** (Pro / Max subscription) — primary target.
-- **OpenAI Codex CLI** — full support: same `extract` command works on Codex's session JSONL via the `CODEX_THREAD_ID` env var.
-- Anything else that reads `CLAUDE.md` or `AGENTS.md` — drop the rule there and you're done.
+Your subscription model — Claude Opus, GPT-5, Sonnet, Gemini Pro — costs you weekly token quota whether it's reasoning about code or just reading 5 files for context. **Reading is mechanical work.** There's no reason to pay reasoning prices for it.
+
+`cheap-llm-router` puts a $0.20/M-input model in front of your subscription. The cheap one handles "read these files — what's in them?" — your subscription gets the **answer** (~600 tokens) and spends its precious context on what it's actually good at: thinking, deciding, writing correct code.
+
+**You keep:**
+- Your subscription's reasoning quality (Opus / GPT-5 / Gemini Pro still do all the real work)
+- Your existing IDE / CLI / chat workflow — `cheap` plugs in via a one-line rule
+- Every existing prompt, project rule, habit
+
+**You drop:**
+- ~85% of tokens burnt on "read these files" busywork
+- Most weekly-limit hits — gain weeks before bumping the cap
+- The mental tax of rationing your subscription
+
+**Tested AI agents:** Claude Code · OpenAI Codex CLI · Cursor · Gemini CLI · Aider · Cline · Continue.dev · Plandex · Crush · Goose · OpenCode · aichat. Works with anything else that reads `CLAUDE.md` / `AGENTS.md` rule files or can call shell commands.
+
+> **Don't pay senior-architect rates to photocopy documents.**
 
 ## Picking a model
 
