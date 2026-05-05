@@ -1,0 +1,34 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "cheap-llm-router"
+version = "0.1.0"
+description = "Delegate read-for-context summaries from Claude Code to a cheap OpenAI-compatible model."
+requires-python = ">=3.11"
+authors = [{ name = "cheap-llm-router authors" }]
+readme = "README.md"
+license = { text = "MIT" }
+dependencies = [
+    "typer>=0.12",
+    "openai>=1.40",
+    "pyyaml>=6.0",
+]
+
+[project.optional-dependencies]
+test = [
+    "pytest>=8.0",
+    "respx>=0.21",
+    "tiktoken>=0.7",
+]
+
+[project.scripts]
+cheap = "cheap_llm.cli:app"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/cheap_llm"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
