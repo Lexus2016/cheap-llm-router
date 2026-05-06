@@ -7,6 +7,7 @@ the same call_provider path, so a separate paid test is redundant.
 
 from __future__ import annotations
 
+import json
 import os
 from pathlib import Path
 
@@ -163,6 +164,71 @@ def fake_provider(monkeypatch):
         "cheap_llm.commands.extract.call_provider", fake_call
     )
     return captured
+
+
+def test_extract_handles_nested_format_specs_in_template(
+    tmp_config, fake_provider, monkeypatch
+) -> None:
+    """Targeted regression for the actual `format_map` bug: if the
+    module-level `_PROMPT_TEMPLATE` ever ships nested `{name:{spec}}`
+    syntax (typo, refactor mistake, copy-pasted code-block), Python's
+    format-spec parser crashes with 'Max string recursion exceeded'.
+    `.replace()` doesn't parse spec syntax → the bug class is gone
+    regardless of what the template contains.
+    """
+    monkeypatch.setenv("OPENROUTER_API_KEY", "sk-test")
+    nasty_template = (
+        "Transcript ({backend}, {n_messages} messages):\n{transcript_block}\n"
+        "Aim ~{max_summary_tokens}. Focus: {question_or_overview}\n"
+        "Bad pattern: {a:{b:{c:{d:{e:{f:{g:{h:{i:1}}}}}}}}}\n"
+    )
+    monkeypatch.setattr(extract_cmd, "_PROMPT_TEMPLATE", nasty_template)
+
+    rc = extract_cmd.run(
+        jsonl=str(CLAUDE_FX), session_id=None,
+        question="explain", mode="full", tail=None,
+    )
+    assert rc == extract_cmd.EXIT_OK
+    # Nasty pattern survives verbatim — we substitute only known
+    # placeholders, never parse format specs.
+    assert "{a:{b:{c:{d:{e:{f:{g:{h:{i:1}}}}}}}}}" in fake_provider["prompt"]
+
+
+def test_extract_handles_nested_braces_in_transcript(
+    tmp_config, tmp_path: Path, fake_provider, monkeypatch
+) -> None:
+    """Regression: transcript content with nested `{...}` (tool_use JSON,
+    code blocks with object literals, format-spec lookalikes) must NOT
+    trip Python's str.format-spec parser into 'Max string recursion
+    exceeded'. Same fix path as `cheap read`, separate test because if
+    someone reverts the extract.py change, no read-side test catches it.
+    """
+    monkeypatch.setenv("OPENROUTER_API_KEY", "sk-test")
+    nasty_text = (
+        "const config = { foo: { bar: `${baz}` } };"
+        " // Python format lookalikes: {:{}} {0:{1}} {x!r:{w}}"
+        + (" { foo: { bar: { baz: { qux: 1 } } } }" * 30)
+    )
+    fixture = tmp_path / "nasty.jsonl"
+    lines = [
+        '{"sessionId":"00000000-0000-4000-8000-000000000099",'
+        '"type":"summary","timestamp":"2026-05-05T12:00:00.000Z",'
+        '"uuid":"u0","summary":"Nested-braces stress fixture"}',
+        '{"sessionId":"00000000-0000-4000-8000-000000000099",'
+        '"type":"user","timestamp":"2026-05-05T12:00:01.000Z",'
+        '"uuid":"u1","cwd":"/tmp/x","message":{"role":"user",'
+        '"content":' + json.dumps(nasty_text) + '}}',
+    ]
+    fixture.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+    rc = extract_cmd.run(
+        jsonl=str(fixture), session_id=None,
+        question="explain", mode="full", tail=None,
+    )
+    assert rc == extract_cmd.EXIT_OK
+    # Sanity: nasty content survived intact into the prompt.
+    assert "${baz}" in fake_provider["prompt"]
+    assert "{:{}}" in fake_provider["prompt"]
 
 
 def test_extract_happy_path_emits_summary_and_telemetry(

@@ -137,26 +137,66 @@ def test_run_handles_nested_braces_in_file_content(
     assert "{:{}}" in fake_provider["prompt"]
 
 
+def test_run_handles_nested_format_specs_in_custom_template(
+    tmp_config, tmp_path: Path, fake_provider, monkeypatch
+) -> None:
+    """The actual `format_map` recursion bug: a user-customised
+    `prompt_template` with nested colons inside braces (a typo, a TS
+    type signature accidentally pasted in, etc.) USED to crash with
+    'Max string recursion exceeded' because Python's format-spec parser
+    recurses on `{name:{spec}}` and bombs at depth ~2.
+
+    The previous two tests prove nested braces in VALUES pass through
+    unchanged — but values never triggered the bug. This test exercises
+    the actual buggy path: nasty syntax in the TEMPLATE itself. With
+    `.replace()` we don't parse spec syntax at all, so this is safe.
+    """
+    monkeypatch.setenv("OPENROUTER_API_KEY", "sk-test")
+    f1 = _write(tmp_path, "x.py", "def x(): pass\n")
+
+    # Patch the loaded cfg's prompt_template to a nasty string. This is
+    # the shape that crashed `cheap read` when users hand-edited their
+    # ~/.config/cheap-llm/config.yaml or accidentally introduced TS-like
+    # syntax into the template.
+    from cheap_llm.config import load_config
+    cfg = load_config()
+    nasty_template = (
+        "Files:\n{files_block}\n"
+        "DO NOT use this syntax: {a:{b:{c:{d:{e:{f:{g:{h:{i:1}}}}}}}}}\n"
+        "Aim for ~{max_summary_tokens} tokens. Focus: {question_or_overview}"
+    )
+    object.__setattr__(cfg.read, "prompt_template", nasty_template)
+
+    rc = read_cmd.run(files=[str(f1)], question="explain",
+                      include_sensitive=False, cfg=cfg)
+    assert rc == read_cmd.EXIT_OK
+    # The nasty pattern survives verbatim into the prompt — we substitute
+    # only our 3 known placeholders, never parse format specs.
+    assert "{a:{b:{c:{d:{e:{f:{g:{h:{i:1}}}}}}}}}" in fake_provider["prompt"]
+
+
 def test_run_handles_literal_brace_placeholders_in_file_content(
     tmp_config, tmp_path: Path, fake_provider, monkeypatch
 ) -> None:
-    """A file containing `{max_summary_tokens}` literally must not have
-    that text accidentally substituted: only the template placeholders
-    we control should be replaced, not arbitrary text in user files."""
+    """A file containing `{max_summary_tokens}` literally must NOT have
+    that text accidentally substituted: only the template's placeholders
+    get replaced, never arbitrary text in user files.
+
+    Regression guard for the order of `.replace()` calls in `run`: if
+    `files_block` is interpolated BEFORE the other placeholders, the
+    file's literal `{max_summary_tokens}` would get substituted with
+    the cap value, silently corrupting the user's content.
+    """
     monkeypatch.setenv("OPENROUTER_API_KEY", "sk-test")
     body = "doc says: cap is {max_summary_tokens} tokens.\n"
     f1 = _write(tmp_path, "doc.md", body)
     rc = read_cmd.run(files=[str(f1)], question=None, include_sensitive=False)
     assert rc == read_cmd.EXIT_OK
-    # The literal text from the FILE survives in the prompt verbatim,
-    # because we replace `{files_block}` with the file content first as
-    # a single .replace() — and our other .replace() calls run on the
-    # template body BEFORE files_block is interpolated. The order matters.
     prompt = fake_provider["prompt"]
-    # The *template's* {max_summary_tokens} got replaced (with a number).
-    # The *file's* literal `{max_summary_tokens}` text should still appear
-    # somewhere in the prompt (either substituted or as-is).
-    assert "doc says: cap is" in prompt
+    # The file's literal `{max_summary_tokens}` text must survive verbatim.
+    # If the order were wrong (files_block first, then other placeholders),
+    # this assertion would fail because the brace would be substituted away.
+    assert "doc says: cap is {max_summary_tokens} tokens." in prompt
 
 
 def test_run_missing_api_key_returns_provider_error(
