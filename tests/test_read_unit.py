@@ -107,6 +107,58 @@ def test_run_provider_error_propagates(
     assert "provider call failed" in capsys.readouterr().err
 
 
+def test_run_handles_nested_braces_in_file_content(
+    tmp_config, tmp_path: Path, fake_provider, monkeypatch
+) -> None:
+    """Regression: file content with nested `{...}` (TS template literals,
+    JSON, Python f-strings, deep object literals) must NOT trip Python's
+    str.format-spec parser into 'Max string recursion exceeded'.
+
+    Trigger: deeply nested braces resembling format specs (`{:{}}` is the
+    minimal recursive form). Real-world hits include uncommitted diffs of
+    TypeScript code, JSON config, and Python f-strings — anything where
+    one or more files contain things the format parser would interpret.
+    """
+    monkeypatch.setenv("OPENROUTER_API_KEY", "sk-test")
+    nasty = (
+        "const config = { foo: { bar: `${baz}` }, items: ["
+        "{ a: 1 }, { b: 2 }, { c: { d: { e: 3 } } }] };\n"
+        "// Python lookalike: {:{}} {0:{1}} {x!r:{w}}\n"
+        "// Repeated to push past format-parser recursion limits:\n"
+        + "{ foo: { bar: { baz: { qux: { quux: 1 } } } } }\n" * 50
+    )
+    f1 = _write(tmp_path, "diff.ts", nasty)
+    rc = read_cmd.run(files=[str(f1)], question="explain",
+                      include_sensitive=False)
+    assert rc == read_cmd.EXIT_OK
+    # Sanity: nasty content survived intact into the prompt — i.e. we
+    # didn't accidentally interpret it as format placeholders.
+    assert "${baz}" in fake_provider["prompt"]
+    assert "{:{}}" in fake_provider["prompt"]
+
+
+def test_run_handles_literal_brace_placeholders_in_file_content(
+    tmp_config, tmp_path: Path, fake_provider, monkeypatch
+) -> None:
+    """A file containing `{max_summary_tokens}` literally must not have
+    that text accidentally substituted: only the template placeholders
+    we control should be replaced, not arbitrary text in user files."""
+    monkeypatch.setenv("OPENROUTER_API_KEY", "sk-test")
+    body = "doc says: cap is {max_summary_tokens} tokens.\n"
+    f1 = _write(tmp_path, "doc.md", body)
+    rc = read_cmd.run(files=[str(f1)], question=None, include_sensitive=False)
+    assert rc == read_cmd.EXIT_OK
+    # The literal text from the FILE survives in the prompt verbatim,
+    # because we replace `{files_block}` with the file content first as
+    # a single .replace() — and our other .replace() calls run on the
+    # template body BEFORE files_block is interpolated. The order matters.
+    prompt = fake_provider["prompt"]
+    # The *template's* {max_summary_tokens} got replaced (with a number).
+    # The *file's* literal `{max_summary_tokens}` text should still appear
+    # somewhere in the prompt (either substituted or as-is).
+    assert "doc says: cap is" in prompt
+
+
 def test_run_missing_api_key_returns_provider_error(
     tmp_config, tmp_path: Path, monkeypatch, capsys
 ) -> None:

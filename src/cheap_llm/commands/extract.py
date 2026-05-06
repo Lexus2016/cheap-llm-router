@@ -16,7 +16,7 @@ from typing import Sequence
 from .. import transcript as tr
 from .. import usage_log
 from ..client import MissingApiKey, call_provider
-from ..config import Config, SafeFormatDict, load_config
+from ..config import Config, load_config
 from ..session_resolver import (
     AmbiguousSession,
     NoSessionFound,
@@ -114,14 +114,20 @@ def run(
         )
         return EXIT_OVERSIZED
 
-    template_vars = SafeFormatDict({
-        "max_summary_tokens": cfg.read.max_summary_tokens,
-        "question_or_overview": question or _DEFAULT_QUESTION,
-        "backend": resolved.backend,
-        "n_messages": len(messages),
-        "transcript_block": transcript_block,
-    })
-    prompt = _PROMPT_TEMPLATE.format_map(template_vars)
+    # Explicit .replace() instead of str.format_map: transcript content
+    # with nested braces (tool-use JSON, code snippets) trips Python's
+    # format-spec parser into "Max string recursion exceeded". Closed set
+    # of placeholders → replacement is enough.
+    prompt = _PROMPT_TEMPLATE
+    prompt = prompt.replace(
+        "{max_summary_tokens}", str(cfg.read.max_summary_tokens)
+    )
+    prompt = prompt.replace(
+        "{question_or_overview}", question or _DEFAULT_QUESTION
+    )
+    prompt = prompt.replace("{backend}", resolved.backend)
+    prompt = prompt.replace("{n_messages}", str(len(messages)))
+    prompt = prompt.replace("{transcript_block}", transcript_block)
 
     # 5. provider call
     try:

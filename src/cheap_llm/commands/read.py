@@ -6,7 +6,7 @@ import sys
 from pathlib import Path
 from typing import Sequence
 
-from ..config import Config, SafeFormatDict, load_config
+from ..config import Config, load_config
 from ..secrets import find_refused
 from ..client import call_provider, MissingApiKey
 from .. import usage_log
@@ -101,12 +101,18 @@ def run(files: Sequence[str], question: str | None,
         )
         return EXIT_OVERSIZED
 
-    template_vars = SafeFormatDict({
-        "max_summary_tokens": cfg.read.max_summary_tokens,
-        "question_or_overview": question or _NO_QUESTION,
-        "files_block": files_block,
-    })
-    prompt = cfg.read.prompt_template.format_map(template_vars)
+    # Explicit .replace() instead of str.format_map: file content with
+    # nested braces (TS template literals, JSON, Python f-strings) trips
+    # Python's format-spec parser into "Max string recursion exceeded".
+    # We have a closed set of placeholders, so replacement is enough.
+    prompt = cfg.read.prompt_template
+    prompt = prompt.replace(
+        "{max_summary_tokens}", str(cfg.read.max_summary_tokens)
+    )
+    prompt = prompt.replace(
+        "{question_or_overview}", question or _NO_QUESTION
+    )
+    prompt = prompt.replace("{files_block}", files_block)
 
     try:
         completion = call_provider(cfg, prompt)
