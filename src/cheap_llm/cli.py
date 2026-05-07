@@ -16,6 +16,7 @@ from .commands import extract as extract_cmd
 from .commands import install_rule as install_rule_cmd
 from .commands import install_claude_rule as install_cmd
 from .commands import install_hook as install_hook_cmd
+from .commands import diagnose as diagnose_cmd
 
 app = typer.Typer(no_args_is_help=True, add_completion=False,
                   help="Delegate read-for-context summaries to a cheap LLM.")
@@ -176,6 +177,37 @@ def cmd_install_hook(
     they currently lack a comparable PreToolUse hook surface.
     """
     rc = install_hook_cmd.run(force=force, soft=soft)
+    raise typer.Exit(rc)
+
+
+@app.command("version")
+def cmd_version(
+    short: bool = typer.Option(
+        False, "--short",
+        help="Print just the package version (pipe-friendly).",
+    ),
+) -> None:
+    """Print package and rule-template versions."""
+    from cheap_llm import __version__, RULE_TEMPLATE_VERSION
+
+    if short:
+        typer.echo(__version__)
+    else:
+        typer.echo(
+            f"cheap-llm-router {__version__} "
+            f"(rule template v={RULE_TEMPLATE_VERSION})"
+        )
+
+
+@app.command("diagnose")
+def cmd_diagnose(
+    json_output: bool = typer.Option(
+        False, "--json",
+        help="Emit machine-readable JSON instead of the human table.",
+    ),
+) -> None:
+    """Health check: CLAUDE.md, RULES.json, ACTIVATION.md, hook, config, API key."""
+    rc = diagnose_cmd.run(json_output=json_output)
     raise typer.Exit(rc)
 
 
