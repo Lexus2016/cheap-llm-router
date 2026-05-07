@@ -303,3 +303,32 @@ def test_main_logs_soft_mode_correctly(
     assert rec["nudged"] is True
     assert rec["decision"] == "allow"
     assert rec["mode"] == "soft"
+
+
+# --- v9.0 alignment: PRE-FLIGHT #3 reference --------------------------------
+
+
+def test_block_message_references_preflight_3_for_large_file(
+    tmp_path: Path,
+) -> None:
+    """Large-file block agent_ctx must point at PRE-FLIGHT #3."""
+    f = _write(tmp_path, "big.py", 500)
+    _, _, agent_msg = hook.decide(_payload(str(f)))
+    assert "PRE-FLIGHT #3" in agent_msg
+    assert "Cheap-first reads" in agent_msg
+
+
+def test_block_message_references_preflight_3_for_multi_read(
+    tmp_path: Path,
+) -> None:
+    """Multi-Read block agent_ctx must point at PRE-FLIGHT #3."""
+    f1 = _write(tmp_path, "a.py", 500)
+    f2 = _write(tmp_path, "b.py", 500)
+    f3 = _write(tmp_path, "c.py", 500)
+    transcript = tmp_path / "session.jsonl"
+    _write_jsonl(transcript, [("Read", str(f1)), ("Read", str(f2))])
+    _, _, agent_msg = hook.decide(
+        _payload(str(f3), transcript_path=str(transcript))
+    )
+    assert "PRE-FLIGHT #3" in agent_msg
+    assert "Cheap-first reads" in agent_msg

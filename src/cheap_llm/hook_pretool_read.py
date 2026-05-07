@@ -55,6 +55,14 @@ _SECRETS_HINTS = (
     "id_ecdsa", "id_ed25519", ".npmrc", ".pypirc",
 )
 
+# Single-line pointer appended to every block-message agent_ctx so the
+# agent can self-correct against the upstream rule rather than only the
+# inline action. Bypass conditions live in CLAUDE.md PRE-FLIGHT #3 —
+# duplicating them in every hook fire is noise.
+_PREFLIGHT_3_REF = (
+    " Reference: ~/.claude/CLAUDE.md PRE-FLIGHT #3 (Cheap-first reads)."
+)
+
 
 # --- core decision logic -----------------------------------------------------
 
@@ -205,6 +213,7 @@ def decide(payload: dict) -> tuple[str, str, str]:
                 f"Returns ~600-tok summary covering all files. Bypass: "
                 f"retry Read with offset+limit if you need line-targeted "
                 f"access to a specific section."
+                f"{_PREFLIGHT_3_REF}"
             ),
         )
 
@@ -223,6 +232,7 @@ def decide(payload: dict) -> tuple[str, str, str]:
                 f"context (~600-tok summary), or "
                 f"(b) retry Read with offset+limit for line-targeted "
                 f"access if you need exact bytes."
+                f"{_PREFLIGHT_3_REF}"
             ),
         )
 
