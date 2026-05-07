@@ -10,10 +10,12 @@ import typer
 from . import config as config_mod
 from . import transcript as tr
 from . import usage_log
+from . import hook_pretool_read
 from .commands import read as read_cmd
 from .commands import extract as extract_cmd
 from .commands import install_rule as install_rule_cmd
 from .commands import install_claude_rule as install_cmd
+from .commands import install_hook as install_hook_cmd
 
 app = typer.Typer(no_args_is_help=True, add_completion=False,
                   help="Delegate read-for-context summaries to a cheap LLM.")
@@ -140,6 +142,39 @@ def cmd_install_rule(
     """Install the delegation rule into Claude's CLAUDE.md, Codex's AGENTS.md, or both."""
     rc = install_rule_cmd.run(target=target, force=force)
     raise typer.Exit(rc)
+
+
+@app.command("install-hook")
+def cmd_install_hook(
+    force: bool = typer.Option(
+        False, "--force",
+        help="Replace the existing PreToolUse:Read entry instead of skipping.",
+    ),
+) -> None:
+    """Register a PreToolUse:Read hook in ~/.claude/settings.json.
+
+    The hook nudges the agent (via `additionalContext`) toward
+    `cheap read` when it is about to make a delegate-worthy native
+    Read — full file ≥200 lines, or ≥2 full reads in the last few
+    turns. Other Reads (short files, line-targeted, Edit-follows,
+    secrets, images) pass through silently.
+
+    Claude-Code-specific. For Codex CLI / Cursor / Aider / Cline /
+    Continue / OpenCode / Gemini CLI use `cheap install-rule` instead;
+    they currently lack a comparable PreToolUse hook surface.
+    """
+    rc = install_hook_cmd.run(force=force)
+    raise typer.Exit(rc)
+
+
+@app.command(
+    "pretooluse-hook",
+    hidden=True,
+    help="Internal entry point invoked by Claude Code; not for direct use.",
+)
+def cmd_pretooluse_hook() -> None:
+    """Read PreToolUse JSON from stdin, emit decision JSON on stdout."""
+    raise typer.Exit(hook_pretool_read.main())
 
 
 @app.command("install-claude-rule")

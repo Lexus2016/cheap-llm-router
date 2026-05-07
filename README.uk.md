@@ -110,6 +110,16 @@ already installed at /Users/you/.claude/CLAUDE.md (rule v1; v2 available
 
 `--force` перезаписує весь блок `## Cheap LLM …`, тож будь-які ваші локальні правки в ньому (наприклад, власні записи в «Past mistakes») будуть втрачені — скопіюйте їх окремо заздалегідь, якщо хочете зберегти.
 
+### Опціонально: PreToolUse hook (тільки Claude Code)
+
+Правило само по собі покладається на те, що агент сам згадає про делегацію перед кожним `Read`. На довгих сесіях ця дисципліна падає нижче 5%. Опціональний hook закриває цей розрив тим, що **в момент** виклику `Read` додає підказку прямо в контекст агента — але тільки коли читання дійсно delegate-worthy (повний файл ≥200 рядків або ≥2 повних читання за кілька попередніх turn'ів). Інші Reads (короткі файли, line-targeted, після Edit на цей же файл, secrets, зображення) проходять без шуму.
+
+```bash
+cheap install-hook        # додає PreToolUse:Read запис у ~/.claude/settings.json
+```
+
+Hook ніколи не блокує: завжди повертає `permissionDecision: "allow"` і додає лише `additionalContext` як підказку. Інші агенти (Codex CLI, Cursor, Aider, Cline, Continue, OpenCode, Gemini CLI) поки що не мають такого ж hook-API — для них єдиним механізмом делегації лишається правило з `cheap install-rule`.
+
 ## For AI agents (auto-install)
 
 Якщо ти AI-агент (Claude Code, Codex CLI, Gemini, Cursor тощо), що читає цей README щоб встановити `cheap` для свого користувача — виконай ці кроки по порядку. Зупинись і запитай користувача, якщо для якогось кроку не маєш потрібної інформації.
