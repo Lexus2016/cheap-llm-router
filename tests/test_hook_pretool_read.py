@@ -135,10 +135,11 @@ def test_nudge_for_large_file_no_recent_reads(tmp_path: Path) -> None:
     f = _write(tmp_path, "big.py", 500)  # > LARGE_FILE_LINES
     skip, user_msg, agent_msg = hook.decide(_payload(str(f)))
     assert skip == ""
-    assert "Large file" in user_msg
+    assert "Large-file Read blocked" in user_msg
     assert "500 lines" in user_msg
-    assert "DELEGATION HINT" in agent_msg
+    assert "Read BLOCKED" in agent_msg
     assert "cheap read" in agent_msg
+    assert "offset+limit" in agent_msg  # bypass instruction present
 
 
 def test_strong_nudge_for_multi_read_pattern(tmp_path: Path) -> None:
@@ -154,9 +155,10 @@ def test_strong_nudge_for_multi_read_pattern(tmp_path: Path) -> None:
         _payload(str(f3), transcript_path=str(transcript))
     )
     assert skip == ""
-    assert "Multi-file pattern" in user_msg
-    assert "3 full reads" in user_msg  # 2 prior + this one
-    assert "STOP and run" in agent_msg
+    assert "Multi-file Read blocked" in user_msg
+    assert "3 full" in user_msg  # 2 prior + this one
+    assert "ACTION" in agent_msg
+    assert "cheap read" in agent_msg
 
 
 def test_no_nudge_for_borderline_size(tmp_path: Path) -> None:
@@ -167,30 +169,87 @@ def test_no_nudge_for_borderline_size(tmp_path: Path) -> None:
     assert (user_msg, agent_msg) == ("", "")
 
 
-# --- main() entry point -----------------------------------------------------
+# --- main() entry point: default = block on nudge -------------------------
 
-def test_main_emits_allow_with_reason_on_nudge(
+def test_main_denies_on_nudge_in_default_mode(
     tmp_path: Path, monkeypatch, capsys
 ) -> None:
+    """Default behavior: large-file Read returns deny + reason."""
     f = _write(tmp_path, "big.py", 500)
     monkeypatch.setattr("sys.stdin", io.StringIO(json.dumps(_payload(str(f)))))
-    # Send hook log to a tmp dir to avoid polluting ~/.cache.
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
-    rc = hook.main()
+    monkeypatch.delenv("CHEAP_HOOK_MODE", raising=False)
+    rc = hook.main(argv=[])  # no --soft flag
+    assert rc == 0
+    out = json.loads(capsys.readouterr().out)
+    out_h = out["hookSpecificOutput"]
+    assert out_h["permissionDecision"] == "deny"
+    assert "Large-file Read blocked" in out_h["permissionDecisionReason"]
+    assert "Read BLOCKED" in out_h["additionalContext"]
+
+
+def test_main_denies_on_multi_read_in_default_mode(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
+    f1 = _write(tmp_path, "a.py", 500)
+    f2 = _write(tmp_path, "b.py", 500)
+    f3 = _write(tmp_path, "c.py", 500)
+    transcript = tmp_path / "session.jsonl"
+    _write_jsonl(transcript, [
+        ("Read", str(f1)),
+        ("Read", str(f2)),
+    ])
+    pl = _payload(str(f3), transcript_path=str(transcript))
+    monkeypatch.setattr("sys.stdin", io.StringIO(json.dumps(pl)))
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
+    monkeypatch.delenv("CHEAP_HOOK_MODE", raising=False)
+    rc = hook.main(argv=[])
+    assert rc == 0
+    out = json.loads(capsys.readouterr().out)
+    assert out["hookSpecificOutput"]["permissionDecision"] == "deny"
+    assert "Multi-file" in out["hookSpecificOutput"]["permissionDecisionReason"]
+
+
+def test_main_allows_on_nudge_with_soft_flag(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
+    """--soft flag turns deny → allow but keeps the reason text."""
+    f = _write(tmp_path, "big.py", 500)
+    monkeypatch.setattr("sys.stdin", io.StringIO(json.dumps(_payload(str(f)))))
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
+    monkeypatch.delenv("CHEAP_HOOK_MODE", raising=False)
+    rc = hook.main(argv=["--soft"])
+    assert rc == 0
+    out = json.loads(capsys.readouterr().out)
+    out_h = out["hookSpecificOutput"]
+    assert out_h["permissionDecision"] == "allow"
+    assert "Large-file Read blocked" in out_h["permissionDecisionReason"]
+    assert "additionalContext" in out_h
+
+
+def test_main_allows_on_nudge_with_env_var_soft(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
+    """CHEAP_HOOK_MODE=soft env var also flips to allow."""
+    f = _write(tmp_path, "big.py", 500)
+    monkeypatch.setattr("sys.stdin", io.StringIO(json.dumps(_payload(str(f)))))
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
+    monkeypatch.setenv("CHEAP_HOOK_MODE", "soft")
+    rc = hook.main(argv=[])
     assert rc == 0
     out = json.loads(capsys.readouterr().out)
     assert out["hookSpecificOutput"]["permissionDecision"] == "allow"
-    assert "Large file" in out["hookSpecificOutput"]["permissionDecisionReason"]
-    assert out["hookSpecificOutput"]["additionalContext"]
 
 
 def test_main_emits_bare_allow_on_skip(
     tmp_path: Path, monkeypatch, capsys
 ) -> None:
+    """Skip rules always allow regardless of mode (block or soft)."""
     f = _write(tmp_path, "small.py", 50)
     monkeypatch.setattr("sys.stdin", io.StringIO(json.dumps(_payload(str(f)))))
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
-    rc = hook.main()
+    monkeypatch.delenv("CHEAP_HOOK_MODE", raising=False)
+    rc = hook.main(argv=[])  # default = block, but skip wins
     assert rc == 0
     out = json.loads(capsys.readouterr().out)
     out_h = out["hookSpecificOutput"]
@@ -204,22 +263,43 @@ def test_main_robust_to_malformed_stdin(
 ) -> None:
     monkeypatch.setattr("sys.stdin", io.StringIO("{not json"))
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
-    rc = hook.main()
+    rc = hook.main(argv=[])
     assert rc == 0
     out = json.loads(capsys.readouterr().out)
+    # Malformed input → bare allow (never break agent's flow).
     assert out["hookSpecificOutput"]["permissionDecision"] == "allow"
 
 
 def test_main_logs_decisions_to_hook_log(
     tmp_path: Path, monkeypatch, capsys
 ) -> None:
+    """hook.log records decision + mode for later analysis."""
     f = _write(tmp_path, "big.py", 500)
     monkeypatch.setattr("sys.stdin", io.StringIO(json.dumps(_payload(str(f)))))
     cache = tmp_path / "cache"
     monkeypatch.setenv("XDG_CACHE_HOME", str(cache))
-    hook.main()
+    monkeypatch.delenv("CHEAP_HOOK_MODE", raising=False)
+    hook.main(argv=[])  # default block mode
     log = cache / "cheap-llm" / "hook.log"
     assert log.exists()
     rec = json.loads(log.read_text().strip())
     assert rec["nudged"] is True
+    assert rec["decision"] == "deny"
+    assert rec["mode"] == "block"
     assert rec["file"] == str(f)
+
+
+def test_main_logs_soft_mode_correctly(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
+    f = _write(tmp_path, "big.py", 500)
+    monkeypatch.setattr("sys.stdin", io.StringIO(json.dumps(_payload(str(f)))))
+    cache = tmp_path / "cache"
+    monkeypatch.setenv("XDG_CACHE_HOME", str(cache))
+    monkeypatch.delenv("CHEAP_HOOK_MODE", raising=False)
+    hook.main(argv=["--soft"])
+    log = cache / "cheap-llm" / "hook.log"
+    rec = json.loads(log.read_text().strip())
+    assert rec["nudged"] is True
+    assert rec["decision"] == "allow"
+    assert rec["mode"] == "soft"

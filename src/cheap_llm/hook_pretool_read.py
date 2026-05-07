@@ -1,35 +1,29 @@
 """``cheap pretooluse-hook`` — Claude Code PreToolUse:Read interceptor.
 
-Reads the PreToolUse JSON contract from stdin, decides whether the
+Reads the PreToolUse JSON from stdin, decides whether the
 about-to-fire ``Read`` is delegate-worthy, and writes a structured
 response on stdout.
 
-Decision shape (always ``permissionDecision: "allow"`` — we nudge,
-not block):
+Default mode (block): when a delegate-worthy pattern is detected,
+returns ``permissionDecision: "deny"`` so the agent must use cheap
+or retry with offset+limit. Soft mode (``--soft``): returns ``allow``
+with the same reason text — observability only. Soft is opt-in for
+power users; default is block because soft does not change agent
+behavior on long sessions (measured: ~3% compliance).
 
-    {"hookSpecificOutput": {
-        "hookEventName": "PreToolUse",
-        "permissionDecision": "allow",
-        "permissionDecisionReason": "<text the USER sees>",
-        "additionalContext": "<text the AGENT sees, only on nudge>"
-    }}
-
-Skip rules (no nudge):
-  - file_path matches binary/image/PDF/video extension
+Skip rules (always allow, no message):
+  - file_path matches binary/image/PDF/video/archive extension
   - file_path matches secrets-guard pattern (auth/crypto/.env/.key/etc)
   - tool_input has ``offset`` or ``limit`` (line-targeted read)
-  - file is < SHORT_FILE_LINES lines (single Read fully closes it)
+  - file is < SHORT_FILE_LINES lines
   - last few tool_uses include Edit/Write on the same path
-    (Edit-follows-Read pattern, legitimate exception)
 
-Trigger rules (emit nudge):
-  - "multi-file" — ≥ MULTI_READ_THRESHOLD recent full-file Reads in
-    the last MULTI_READ_WINDOW tool_uses → strongest nudge
-  - "large-file" — single Read of file ≥ LARGE_FILE_LINES lines →
-    softer nudge
+Block triggers (deny in default mode, allow+reason in soft mode):
+  - multi-file: ≥ MULTI_READ_THRESHOLD full-file Reads in last
+    MULTI_READ_WINDOW tool_uses
+  - large-file: single Read of file ≥ LARGE_FILE_LINES lines
 
-Decisions are also appended to ``~/.cache/cheap-llm/hook.log`` for
-later effectiveness analysis (one JSON line per Read seen).
+Decisions append to ``~/.cache/cheap-llm/hook.log`` for analysis.
 """
 
 from __future__ import annotations
@@ -196,23 +190,21 @@ def decide(payload: dict) -> tuple[str, str, str]:
 
     n_recent_reads = _recent_full_reads(recent, MULTI_READ_WINDOW)
     if n_recent_reads >= MULTI_READ_THRESHOLD:
-        # Strong nudge — multi-file pattern is the biggest win.
         return (
             "",
             (
-                f"💡 Multi-file pattern: {n_recent_reads + 1} full reads in "
-                f"the last {MULTI_READ_WINDOW} tool calls. Consider "
-                f"`cheap read F1 F2 ... -q '<question>'` for ~10× compression."
+                f"🚫 Multi-file Read blocked ({n_recent_reads + 1} full "
+                f"reads in last {MULTI_READ_WINDOW} turns). "
+                f"Run: `cheap read <files> -q '<question>'`."
             ),
             (
-                f"DELEGATION HINT — you have made {n_recent_reads + 1} full-"
-                f"file Reads in the last {MULTI_READ_WINDOW} turns. This is "
-                f"the strongest delegate-worthy pattern. STOP and run "
-                f"`cheap read <files...> -q '<your question>'` instead. "
-                f"You will get a ~600-token markdown summary covering all "
-                f"files at once, costing ~$0.002 vs ~10k tokens of your "
-                f"context. Exception: if you need exact line citations or "
-                f"will Edit one of these files next, native Read is correct."
+                f"Read BLOCKED. {n_recent_reads + 1} full-file Reads in "
+                f"last {MULTI_READ_WINDOW} turns is the strongest "
+                f"delegate-worthy pattern. ACTION: run "
+                f"`cheap read <file paths> -q '<your question>'` via Bash. "
+                f"Returns ~600-tok summary covering all files. Bypass: "
+                f"retry Read with offset+limit if you need line-targeted "
+                f"access to a specific section."
             ),
         )
 
@@ -220,18 +212,17 @@ def decide(payload: dict) -> tuple[str, str, str]:
         return (
             "",
             (
-                f"💡 Large file ({n_lines} lines, ~{n_lines * 8} input "
-                f"tokens). Consider `cheap read {Path(file_path).name} "
-                f"-q '<question>'` if you don't need line citations."
+                f"🚫 Large-file Read blocked ({n_lines} lines). "
+                f"Run: `cheap read {file_path} -q '<question>'` "
+                f"or retry Read with offset+limit."
             ),
             (
-                f"DELEGATION HINT — about to read {n_lines}-line file "
-                f"({file_path}). Exceptions where native Read is correct: "
-                f"(a) next tool call is Edit/Write on this file, "
-                f"(b) you need line-number citations, "
-                f"(c) security review needing exact bytes. "
-                f"Otherwise: `cheap read {file_path} -q '<question>'` "
-                f"returns ~600-token summary at ~10× compression."
+                f"Read BLOCKED. {n_lines}-line file is delegate-worthy. "
+                f"ACTION: choose ONE: "
+                f"(a) `cheap read {file_path} -q '<question>'` for "
+                f"context (~600-tok summary), or "
+                f"(b) retry Read with offset+limit for line-targeted "
+                f"access if you need exact bytes."
             ),
         )
 
@@ -249,7 +240,9 @@ def _hook_log_path() -> Path:
     return p
 
 
-def _log_decision(payload: dict, skip_reason: str, nudged: bool) -> None:
+def _log_decision(
+    payload: dict, skip_reason: str, nudged: bool, soft_mode: bool
+) -> None:
     try:
         line = json.dumps({
             "ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
@@ -257,6 +250,10 @@ def _log_decision(payload: dict, skip_reason: str, nudged: bool) -> None:
             "file": payload.get("tool_input", {}).get("file_path", ""),
             "skip": skip_reason or None,
             "nudged": nudged,
+            "decision": (
+                "allow" if (soft_mode or not nudged) else "deny"
+            ),
+            "mode": "soft" if soft_mode else "block",
         }, separators=(",", ":"))
         with open(_hook_log_path(), "a", encoding="utf-8") as f:
             f.write(line + "\n")
@@ -264,11 +261,12 @@ def _log_decision(payload: dict, skip_reason: str, nudged: bool) -> None:
         pass  # never break the hook on log failure
 
 
-def _emit_allow(reason: str = "", agent_ctx: str = "") -> None:
+def _emit(decision: str, reason: str = "", agent_ctx: str = "") -> None:
+    """Emit the PreToolUse response JSON. ``decision`` is "allow" or "deny"."""
     out = {
         "hookSpecificOutput": {
             "hookEventName": "PreToolUse",
-            "permissionDecision": "allow",
+            "permissionDecision": decision,
         }
     }
     if reason:
@@ -282,25 +280,34 @@ def _emit_allow(reason: str = "", agent_ctx: str = "") -> None:
 def main(argv: list[str] | None = None) -> int:
     """Entry point invoked by Claude Code via ``cheap pretooluse-hook``.
 
-    Always exits 0. Never blocks. Worst-case (malformed input, exception)
-    we emit a bare ``allow`` so the agent's Read proceeds unaffected.
+    Default = block on delegate-worthy patterns. ``--soft`` flag (or env
+    ``CHEAP_HOOK_MODE=soft``) reverts to allow + reason for users who
+    want observability without enforcement. Worst-case (malformed input,
+    exception) emits bare ``allow`` so the agent's Read still proceeds.
     """
+    args = argv if argv is not None else sys.argv[1:]
+    soft_mode = (
+        "--soft" in args
+        or os.environ.get("CHEAP_HOOK_MODE", "").lower() == "soft"
+    )
+
     try:
         raw = sys.stdin.read()
         payload = json.loads(raw) if raw.strip() else {}
     except (json.JSONDecodeError, OSError):
-        _emit_allow()
+        _emit("allow")
         return 0
 
     try:
         skip_reason, user_msg, agent_msg = decide(payload)
     except Exception:  # noqa: BLE001 — hook must NEVER crash
-        _emit_allow()
+        _emit("allow")
         return 0
 
     nudged = bool(user_msg or agent_msg)
-    _log_decision(payload, skip_reason, nudged)
-    _emit_allow(reason=user_msg, agent_ctx=agent_msg)
+    _log_decision(payload, skip_reason, nudged, soft_mode)
+    decision = "allow" if (soft_mode or not nudged) else "deny"
+    _emit(decision, reason=user_msg, agent_ctx=agent_msg)
     return 0
 
 

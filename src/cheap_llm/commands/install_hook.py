@@ -23,7 +23,8 @@ EXIT_OK = 0
 EXIT_GENERIC_ERROR = 1
 
 
-_HOOK_COMMAND = "cheap pretooluse-hook"
+_HOOK_COMMAND_BLOCK = "cheap pretooluse-hook"
+_HOOK_COMMAND_SOFT = "cheap pretooluse-hook --soft"
 _HOOK_MATCHER = "Read"
 
 
@@ -54,18 +55,21 @@ def _has_our_hook(entries: list[dict]) -> int | None:
     return None
 
 
-def _build_entry() -> dict:
+def _build_entry(soft: bool) -> dict:
+    cmd = _HOOK_COMMAND_SOFT if soft else _HOOK_COMMAND_BLOCK
     return {
         "matcher": _HOOK_MATCHER,
-        "hooks": [{"type": "command", "command": _HOOK_COMMAND}],
+        "hooks": [{"type": "command", "command": cmd}],
     }
 
 
-def install_into(settings_path: Path, *, force: bool) -> str:
+def install_into(settings_path: Path, *, force: bool, soft: bool = False) -> str:
     """Write the hook entry into `settings_path`. Returns a one-line action.
 
     Idempotent without `force`; with `force` rewrites our entry in place.
     Other entries (other matchers, other events) are preserved verbatim.
+    `soft=True` writes the observability-only command (``--soft``); default
+    is the block command.
     """
     try:
         settings = _load_settings(settings_path)
@@ -84,16 +88,26 @@ def install_into(settings_path: Path, *, force: bool) -> str:
         return f"error: hooks.PreToolUse in {settings_path} is not a list"
 
     idx = _has_our_hook(pre)
+    mode_label = "soft" if soft else "block"
     if idx is not None and not force:
-        return f"already installed in {settings_path} (PreToolUse:Read)"
+        return (
+            f"already installed in {settings_path} "
+            f"(PreToolUse:Read; run with --force to switch mode)"
+        )
 
-    new_entry = _build_entry()
+    new_entry = _build_entry(soft=soft)
     if idx is not None:
         pre[idx] = new_entry
-        msg = f"installed: replaced PreToolUse:Read entry in {settings_path} (--force)"
+        msg = (
+            f"installed: replaced PreToolUse:Read entry in {settings_path} "
+            f"(--force, mode={mode_label})"
+        )
     else:
         pre.append(new_entry)
-        msg = f"installed: added PreToolUse:Read entry to {settings_path}"
+        msg = (
+            f"installed: added PreToolUse:Read entry to {settings_path} "
+            f"(mode={mode_label})"
+        )
 
     settings_path.parent.mkdir(parents=True, exist_ok=True)
     settings_path.write_text(
@@ -102,10 +116,11 @@ def install_into(settings_path: Path, *, force: bool) -> str:
     return msg
 
 
-def run(*, force: bool = False, home: Path | None = None) -> int:
+def run(*, force: bool = False, soft: bool = False,
+        home: Path | None = None) -> int:
     home = home or Path.home()
     path = _settings_path(home)
-    msg = install_into(path, force=force)
+    msg = install_into(path, force=force, soft=soft)
     if msg.startswith("error:"):
         print(f"cheap install-hook: {msg}", file=sys.stderr)
         return EXIT_GENERIC_ERROR
