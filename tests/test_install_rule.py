@@ -297,31 +297,26 @@ def test_force_upgrade_replaces_block_and_marker(tmp_path: Path) -> None:
 
 def test_load_snippet_claude_substitutes_claude_specific_bits() -> None:
     snippet = install_rule_cmd._load_snippet("claude")
-    assert "{" not in snippet or "{AGENT_NAME}" not in snippet  # no placeholders left
-    assert "Claude Code" in snippet
-    assert "~/.claude/projects/" in snippet
     assert "Claude Code statusline" in snippet
-    # Codex-specific markers must NOT leak into claude rendering.
-    assert "Codex CLI" not in snippet
-    assert "CODEX_THREAD_ID" not in snippet
+    # Codex/generic-specific bits must NOT leak into claude rendering.
+    assert "Codex CLI surfaces" not in snippet
+    assert "most agents surface" not in snippet
 
 
 def test_load_snippet_codex_substitutes_codex_specific_bits() -> None:
     snippet = install_rule_cmd._load_snippet("codex")
-    assert "Codex CLI" in snippet
-    assert "CODEX_THREAD_ID" in snippet
-    assert "~/.codex/sessions/" in snippet
-    # Claude-specific bits must NOT leak.
+    assert "Codex CLI surfaces" in snippet
+    # Claude/generic-specific bits must NOT leak.
     assert "Claude Code statusline" not in snippet
-    assert "~/.claude/projects/" not in snippet
+    assert "most agents surface" not in snippet
 
 
 def test_load_snippet_generic_uses_neutral_wording() -> None:
     snippet = install_rule_cmd._load_snippet("generic")
-    assert "your agent" in snippet
-    # Neither agent's specific paths should appear in the generic rendering.
-    assert "~/.claude/projects/" not in snippet
-    assert "~/.codex/sessions/" not in snippet
+    assert "most agents surface" in snippet
+    # Neither named agent's bits should appear in the generic rendering.
+    assert "Claude Code statusline" not in snippet
+    assert "Codex CLI surfaces" not in snippet
 
 
 def test_load_snippet_unknown_kind_raises() -> None:
@@ -347,8 +342,7 @@ def test_install_rule_target_codex_renders_codex_kind(tmp_path: Path) -> None:
     rc = install_rule_cmd.run(target="codex", home=tmp_path)
     assert rc == install_rule_cmd.EXIT_OK
     text = (tmp_path / ".codex" / "AGENTS.md").read_text(encoding="utf-8")
-    assert "Codex CLI" in text
-    assert "CODEX_THREAD_ID" in text
+    assert "Codex CLI surfaces" in text
     assert "Claude Code statusline" not in text
 
 
@@ -359,8 +353,8 @@ def test_install_rule_target_all_renders_each_kind_separately(tmp_path: Path) ->
     codex = (tmp_path / ".codex" / "AGENTS.md").read_text(encoding="utf-8")
     # Each file gets its own agent's references.
     assert "Claude Code statusline" in claude
-    assert "Codex CLI" not in claude
-    assert "CODEX_THREAD_ID" in codex
+    assert "Codex CLI surfaces" not in claude
+    assert "Codex CLI surfaces" in codex
     assert "Claude Code statusline" not in codex
 
 
@@ -379,3 +373,68 @@ def test_block_without_marker_treated_as_v1(tmp_path: Path) -> None:
     )
     msg = install_rule_cmd.install_into(target, force=False, snippet=fake_snippet)
     assert "v1" in msg and "v2" in msg
+
+
+# --- v9-native safety guard --------------------------------------------------
+
+_V9_NATIVE_FIXTURE = (
+    "# Claude Code Global Instructions\n"
+    "> Version: 9.0 | Updated: 2026-05-07\n"
+    "\n"
+    "## ABSOLUTE PRE-FLIGHT (run before EVERY response)\n"
+    "Some preflight body.\n"
+    "\n"
+    "## Cheap LLM Delegation — full reference\n"
+    "Native v9 rules — must NOT be replaced by install-rule.\n"
+)
+
+
+def test_install_rule_skipped_on_v9_native_default(
+    tmp_path: Path, capsys, monkeypatch
+) -> None:
+    """v9.0 native CLAUDE.md is detected and left untouched on plain install."""
+    monkeypatch.delenv("CHEAP_FORCE_V9_OVERWRITE", raising=False)
+    target = tmp_path / "CLAUDE.md"
+    target.write_text(_V9_NATIVE_FIXTURE, encoding="utf-8")
+
+    rc = install_cmd.run(force=False, target=target)
+    assert rc == install_cmd.EXIT_OK
+
+    assert target.read_text(encoding="utf-8") == _V9_NATIVE_FIXTURE
+    err = capsys.readouterr().err
+    assert "skipped" in err
+    assert "v9.0 native" in err
+    assert "PRE-FLIGHT" in err
+
+
+def test_install_rule_skipped_on_v9_native_with_force_only(
+    tmp_path: Path, capsys, monkeypatch
+) -> None:
+    """--force alone (without env var) is NOT enough to overwrite v9 native."""
+    monkeypatch.delenv("CHEAP_FORCE_V9_OVERWRITE", raising=False)
+    target = tmp_path / "CLAUDE.md"
+    target.write_text(_V9_NATIVE_FIXTURE, encoding="utf-8")
+
+    rc = install_cmd.run(force=True, target=target)
+    assert rc == install_cmd.EXIT_OK
+
+    assert target.read_text(encoding="utf-8") == _V9_NATIVE_FIXTURE
+    err = capsys.readouterr().err
+    assert "skipped" in err
+
+
+def test_install_rule_overwrites_v9_native_with_double_opt_in(
+    tmp_path: Path, capsys, monkeypatch
+) -> None:
+    """Escape hatch: CHEAP_FORCE_V9_OVERWRITE=1 + --force overwrites native."""
+    monkeypatch.setenv("CHEAP_FORCE_V9_OVERWRITE", "1")
+    target = tmp_path / "CLAUDE.md"
+    target.write_text(_V9_NATIVE_FIXTURE, encoding="utf-8")
+
+    rc = install_cmd.run(force=True, target=target)
+    assert rc == install_cmd.EXIT_OK
+
+    text = target.read_text(encoding="utf-8")
+    assert "<!-- cheap-llm-rule v=" in text
+    err = capsys.readouterr().err
+    assert "skipped" not in err

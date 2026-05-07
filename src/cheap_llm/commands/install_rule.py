@@ -23,6 +23,7 @@ correctly replaces it in place.
 
 from __future__ import annotations
 
+import os
 import re
 import sys
 from importlib.resources import files
@@ -41,6 +42,26 @@ _HEADING_RE = re.compile(
 )
 _NEXT_HEADING_RE = re.compile(r"^##\s", re.MULTILINE)
 _VERSION_RE = re.compile(r"<!--\s*cheap-llm-rule\s+v=(\d+)\s*-->")
+
+# CLAUDE.md v9.0 fingerprint. v9 natively contains a section titled
+# "## Cheap LLM Delegation — full reference" that the broad _HEADING_RE
+# above would falsely match as a legacy v1 (no marker) install. Detect
+# v9 by its unique top-level "## ABSOLUTE PRE-FLIGHT" header and skip
+# overwriting unless the user opts in twice (--force AND env var).
+_V9_PREFLIGHT_MARKER = "## ABSOLUTE PRE-FLIGHT"
+_V9_OVERWRITE_ENV = "CHEAP_FORCE_V9_OVERWRITE"
+
+
+def _looks_like_v9_native(text: str) -> bool:
+    """True if `text` is a v9.0 native CLAUDE.md without our rule marker.
+
+    v9.0 ships PRE-FLIGHT-style native rules; injecting our block on top
+    would duplicate (or with --force destroy) the user's hand-written
+    rules. The combined check (PRE-FLIGHT present AND our marker absent)
+    avoids false-positives in the unlikely case a user has both v9 and
+    a legacy install side by side.
+    """
+    return _V9_PREFLIGHT_MARKER in text and not _VERSION_RE.search(text)
 
 
 # --- target resolution -------------------------------------------------------
@@ -238,6 +259,20 @@ def install_into(target: Path, *, force: bool, snippet: str) -> str:
         return f"installed: created {target}"
 
     text = target.read_text(encoding="utf-8")
+
+    # v9.0-native safety guard — see _looks_like_v9_native docstring.
+    # Escape hatch for emergencies: set CHEAP_FORCE_V9_OVERWRITE=1 in the
+    # environment and pass --force together. Both required to avoid
+    # one-fingered accidents.
+    if _looks_like_v9_native(text):
+        env_opt_in = os.environ.get(_V9_OVERWRITE_ENV) == "1"
+        if not (force and env_opt_in):
+            return (
+                f"skipped: {target} appears to be v9.0 native "
+                f"(PRE-FLIGHT detected). Native rules already cover "
+                f"cheap-first delegation. Run 'cheap diagnose' to verify."
+            )
+
     bounds = _find_block_bounds(text)
 
     if bounds is None:
